@@ -105,6 +105,16 @@ ifeq ($(wildcard $(BOARD_STAMP)),)
 _BOARD_GUARD := $(shell rm -f $(BUILD_DIR)/*.o $(BUILD_DIR)/*.d $(BUILD_DIR)/*.lst $(BUILD_DIR)/.board-* 2>/dev/null; mkdir -p $(BUILD_DIR); touch $(BOARD_STAMP))
 endif
 
+# The commit hash is a -D on every compile line, and make does not track
+# flags, so the one object that bakes it in stayed stale across commits: a
+# bin built at 39b6e63 still reported 3516bbb over HostLink. Retire that
+# object whenever HEAD moves, so a build after the final commit carries that
+# commit's hash.
+HASH_STAMP := $(BUILD_DIR)/.hash-$(SMACK_GIT_HASH)
+ifeq ($(wildcard $(HASH_STAMP)),)
+_HASH_GUARD := $(shell rm -f $(BUILD_DIR)/smack_alchemy.o $(BUILD_DIR)/smack_alchemy.d $(BUILD_DIR)/.hash-* 2>/dev/null; mkdir -p $(BUILD_DIR); touch $(HASH_STAMP))
+endif
+
 .PHONY: libdaisy
 libdaisy:
 	$(MAKE) -C $(LIBDAISY_DIR)
