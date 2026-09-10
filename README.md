@@ -51,6 +51,15 @@ Firmware page, pick a file with the top-left pot, then turn the top-right
 pot down and all the way up. It writes, verifies, and reboots into the
 chosen firmware.
 
+## The site
+
+`docs/index.html` is the operation manual, a single file meant for GitHub
+Pages from `main:/docs`. Its panel drawing is generated from the SDK's KiCad
+front-panel template by `tools/emit_panel_geometry.py`; run it with
+`--check` before publishing and `--write` after the template changes, and
+never hand-edit the coordinates. The repository URL the page links to is one
+constant at the top of the file.
+
 ## Not a Hermetic Modular product
 
 Custom firmware. Hermetic Modular did not write, test or endorse it; ask
