@@ -142,7 +142,10 @@ static constexpr LedPanel::Rgb kBlue   = {0x00, 0x50, 0xFF};
 /* ---- labels (descriptor metadata; static storage, borrowed by pointer) -- */
 
 static const char* const kLengthLabels[6] = {"8", "16", "32", "64", "128", "256"};
-static const char* const kSliceLabels[4]  = {"Coarse", "Medium", "Fine", "Finest"};
+/* Slice size in clock steps, in the engine's own order (slice_hs_table:
+ * 1, 2, 4, 8 half-steps), as the Move names them. Index 0 is the FINEST
+ * cut; an earlier label set ran Coarse..Finest and was backwards. */
+static const char* const kSliceLabels[4]  = {"1/2 step", "1 step", "2 steps", "4 steps"};
 static const char* const kRatioLabels[3]  = {"/2", "=1", "x2"};
 static const char* const kModeLabels[2]   = {"Stereo", "Dual"};
 static const char* const kClockModes[2]   = {"Auto", "Clock"};

@@ -9,10 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<!--
-  REPO: the source is not on GitHub yet. This one constant feeds every
-  source / issues link on the page. CONFIRM before publishing.
--->
+<!-- This one constant feeds every source / issues link on the page. -->
 <script>const REPO = "https://github.com/timncox/smack-alchemy";</script>
 <style>
 /*
@@ -153,6 +150,37 @@ pre i{color:var(--ink);font-style:normal}
 .tg[data-page="1"][aria-pressed="true"]{color:var(--c-seed);border-color:var(--c-seed);background:rgba(192,96,255,.14)}
 .tgcap{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.04em}
 
+/* ---------- the roll ---------- */
+.roll{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:22px 24px;margin-top:8px}
+.rollctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px 22px;align-items:end}
+.rollctl label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:6px}
+.rollctl label b{color:var(--ink);font-weight:500;float:right;letter-spacing:0;text-transform:none}
+.rollctl select{width:100%;font-family:var(--mono);font-size:12.5px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:2px;padding:7px 8px}
+.rollctl input[type=range]{margin:2px 0 0}
+.rollbtns{display:flex;gap:9px;flex-wrap:wrap;margin-top:18px;align-items:center}
+.rollstat{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-left:auto;letter-spacing:.03em}
+.rollstat b{color:var(--ink);font-weight:500}
+.grid{display:flex;flex-wrap:wrap;gap:4px;margin-top:20px;padding:14px;background:var(--bg);border:1px solid var(--line2);border-radius:2px;max-height:520px;overflow:auto}
+.cell{position:relative;border-radius:2px;background:var(--panel2);color:var(--ink);font-family:var(--mono);overflow:hidden;
+  display:flex;flex-direction:column;justify-content:space-between;border:1px solid transparent;transition:transform .12s}
+.cell:hover{transform:translateY(-1px);border-color:rgba(236,231,243,.35);z-index:2}
+.cell.mv{border-color:rgba(236,231,243,.22);border-style:dashed}
+.cell .ci{font-size:9px;color:rgba(236,231,243,.55);letter-spacing:.02em}
+.cell .cs{font-size:12px;font-weight:600;line-height:1}
+.cell .cf,.cell .cp{font-size:8.5px;letter-spacing:.03em;text-transform:uppercase;color:rgba(12,11,17,.85);font-weight:600;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .cp{font-weight:500;color:rgba(12,11,17,.7)}
+.cell.fx .ci{color:rgba(12,11,17,.7)} .cell.fx .cs{color:#0c0b11}
+.g-s .cell{width:60px;height:64px;padding:5px 6px}
+.g-m .cell{width:34px;height:34px;padding:3px 4px} .g-m .cell .cf,.g-m .cell .cp{display:none} .g-m .cell .cs{font-size:10.5px}
+.g-l .cell{width:16px;height:16px;padding:0} .g-l .cell .ci,.g-l .cell .cs,.g-l .cell .cf,.g-l .cell .cp{display:none}
+.g-l .cell.mv{border-width:1px}
+.leg{display:flex;flex-wrap:wrap;gap:6px 10px;margin-top:16px}
+.leg span{font-family:var(--mono);font-size:10.5px;color:var(--soft);display:inline-flex;align-items:center;gap:6px}
+.leg i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.fxtab td:nth-child(2){font-family:var(--body);font-size:14.5px;color:var(--ink);white-space:nowrap}
+.fxtab td:nth-child(2) i{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:8px;vertical-align:-1px}
+.fxtab td:first-child{color:var(--dim)}
+
 /* ---------- ring simulator ---------- */
 .sim{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:26px;display:grid;grid-template-columns:180px 1fr;gap:28px;align-items:center}
 @media(max-width:640px){.sim{grid-template-columns:1fr}}
@@ -186,6 +214,7 @@ footer p{max-width:70ch}
   <a class="s" href="#panel">Panel</a>
   <a class="s" href="#play">Playing</a>
   <a class="s" href="#setup">Setup</a>
+  <a class="s" href="#pattern">Pattern</a>
   <a class="s" href="#clock">Clock</a>
   <a class="s" href="#cv">CV</a>
   <a class="s" href="#rings">Rings</a>
@@ -386,9 +415,76 @@ footer p{max-width:70ch}
   </div>
 </div></section>
 
+<section id="pattern"><div class="wrap">
+  <h2 class="sh">How a pattern is rolled</h2>
+  <div class="sub">05 — FX density, ORDER density and the seed, run for real</div>
+  <p class="lede">A pattern is two passes over the slices with one seeded random stream. <b>ORDER
+    goes first:</b> each slice, in turn, has an ORDER-density chance of trading places with a
+    random slice. <b>Then FX:</b> each slice has an FX-density chance of getting an effect, and if
+    it does, which one is a uniform pick from all 26, followed by a roll of that effect's own
+    setting. The densities decide <em>how many</em>; the seed decides <em>which</em>.</p>
+  <p>The grid below runs the engine's roll, ported line for line with its generator, so for a
+    given SEED with no re-rolls it is the pattern the module will play. Cells with a colour have
+    an effect; a dashed cell plays a different slice from the one that would be there in the
+    original order, and the big number is the slice you hear.</p>
+
+  <div class="roll">
+    <div class="rollctl">
+      <div><label for="rLen">Length <b id="rLenV">32 steps</b></label>
+        <select id="rLen"><option value="3">8 steps</option><option value="4">16 steps</option><option value="5" selected>32 steps</option><option value="6">64 steps</option><option value="7">128 steps</option><option value="8">256 steps</option></select></div>
+      <div><label for="rSlice">Slice <b id="rSliceV">1 step</b></label>
+        <select id="rSlice"><option value="0">½ step</option><option value="1" selected>1 step</option><option value="2">2 steps</option><option value="3">4 steps</option></select></div>
+      <div><label for="rFx">FX density <b id="rFxV">50%</b></label><input type="range" id="rFx" min="0" max="100" value="50"></div>
+      <div><label for="rOrd">Order density <b id="rOrdV">35%</b></label><input type="range" id="rOrd" min="0" max="100" value="35"></div>
+      <div><label for="rSeed">Seed <b id="rSeedV">37</b></label><input type="range" id="rSeed" min="0" max="127" value="37"></div>
+      <div><label for="rPitch">Pitch range <b id="rPitchV">12 st</b></label><input type="range" id="rPitch" min="1" max="24" value="12"></div>
+    </div>
+    <div class="rollbtns">
+      <button class="tg" id="rReroll">Tap CAPTURE · re-roll</button>
+      <button class="tg" id="rCanon">Back to the seed's own pattern</button>
+      <div class="rollstat" id="rStat"></div>
+    </div>
+    <div class="grid g-s" id="rollGrid" aria-live="polite"></div>
+    <div class="leg" id="rollLeg"></div>
+  </div>
+
+  <div class="cols" style="margin-top:26px">
+    <div class="card"><div class="k">Why ORDER changes FX</div><h4>One stream, two passes</h4>
+      <p>Both passes draw from the same generator, ORDER first. Move ORDER density and the FX pass
+        sees different numbers, so the effects re-deal too. That is by design: a pattern is one
+        roll, not two independent ones.</p></div>
+    <div class="card"><div class="k">Density is a chance, not a count</div><h4>50% is about half</h4>
+      <p>Each slice rolls on its own, so 50% FX on 32 slices gives around 16 effected slices, not
+        exactly 16. Short loops with big slices have few cells and swing the most.</p></div>
+    <div class="card"><div class="k">Re-roll vs seed</div><h4>Tap walks, turn jumps</h4>
+      <p>Tapping CAPTURE advances a counter that is mixed into the seed: same seed, next pattern.
+        Turning SEED resets that counter, so the pot always lands on a seed's own first pattern.
+        The pot reaches 128 of the engine's four billion seeds.</p></div>
+  </div>
+  <p style="margin-top:22px">LENGTH and SLICE set how many cells there are: steps in the loop times
+    two, divided by half-steps per slice, from 2 up to 512. Changing either re-rolls everything,
+    because the stream is walked once per slice. In Dual mode the second channel's lane is
+    rolled straight after the first from the same stream, so one seed still fixes both.</p>
+
+  <h3 class="h">The 26 effects, and the punch</h3>
+  <div class="sub">Every one of these is a roll candidate and a PUNCH FX choice on SETUP P4</div>
+  <p class="lede">A rolled effect gets a setting from the roll, listed in the third column. Held
+    from B2, the effect is applied to <em>every</em> slice in the original order with its
+    canonical setting, in the last column. CLEAN, at the bottom of the SETUP list, punches the
+    pattern <em>out</em>: original order, no effects, for as long as you hold.</p>
+  <div class="tablewrap"><table class="fxtab" id="fxTable">
+    <thead><tr><th>#</th><th>Effect</th><th>What it does to a slice</th><th>Rolled setting</th><th>As a punch</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+  <p style="margin-top:20px">Pitch and P-Shift roll their semitones within PITCH RANGE on the
+    SETUP page, up or down; every other setting has a fixed menu. The four newest effects,
+    P-Shift, Ring Mod, Comb and Scatter, joined the roll pool in the engine's v0.11.0, which
+    reshuffled what older seeds produce; nothing on this module predates that.</p>
+</div></section>
+
 <section id="clock"><div class="wrap">
   <h2 class="sh">The clock</h2>
-  <div class="sub">05 — J3, two jobs, one setting</div>
+  <div class="sub">06 — J3, two jobs, one setting</div>
   <p class="lede">This module wants two things from a jack: a tempo, and a "capture now" trigger.
     J3 is that jack, and by default it works out which is arriving.</p>
   <div class="cols">
@@ -420,7 +516,7 @@ footer p{max-width:70ch}
 
 <section id="cv"><div class="wrap">
   <h2 class="sh">Every knob under CV</h2>
-  <div class="sub">06 — J4 to J8, independent of the pots</div>
+  <div class="sub">07 — J4 to J8, independent of the pots</div>
   <p class="lede">On the Versio a CV input is summed with its knob in analogue, so the module can
     never read the jack alone. The Alchemy Lab reads pots and jacks separately and the SDK adds
     them in software, per page and per pot, which means a jack can drive a value on the SETUP page
@@ -447,7 +543,7 @@ footer p{max-width:70ch}
 
 <section id="rings"><div class="wrap">
   <h2 class="sh">Reading the rings</h2>
-  <div class="sub">07 — 96 LEDs around the pots, 6 beside the buttons</div>
+  <div class="sub">08 — 96 LEDs around the pots, 6 beside the buttons</div>
   <p class="lede">The SDK draws every pot's value on its ring in the colour of the page you are
     on. On top of that the firmware adds a playhead, three button lights and a report at boot.</p>
   <div class="tablewrap"><table>
@@ -479,7 +575,7 @@ footer p{max-width:70ch}
     </div>
   </div>
   <p style="margin-top:22px">A single dim blue LED means it has not measured anything yet. Green
-    is under 75%, amber under 90%, red means it did not fit. Play hard, FX and ORDER up, short
+    is under 75%, amber under 90%, red means it did not fit. Play hard, FX and ORDER up, half-step
     SLICE, long LENGTH, then power down and up. On the Versio the same engine read 50 to 75% on
     the same silicon; the SDK adds a 1 ms control poll and the LED driver on top, and the 3.3%
     read so far is idle pass-through, not a loop with effects. <b>This number is still open.</b></p>
@@ -498,7 +594,7 @@ footer p{max-width:70ch}
 
 <section id="card"><div class="wrap">
   <h2 class="sh">Firmware on the card</h2>
-  <div class="sub">08 — Carry several firmwares, change between them from the panel</div>
+  <div class="sub">09 — Carry several firmwares, change between them from the panel</div>
   <p class="lede">Hermetic's firmware treats the SD card as a place for presets and files. This one
     also reads <code>.bin</code> files from it, and can write one into the module's firmware slot,
     verify it, and reboot into it, from a settings page, with the module on and in the rack.</p>
@@ -553,7 +649,7 @@ footer p{max-width:70ch}
 
 <section id="build"><div class="wrap">
   <h2 class="sh">Build it</h2>
-  <div class="sub">09 — No release yet; the source is the download</div>
+  <div class="sub">10 — No release yet; the source is the download</div>
   <p class="lede">There is no packaged release of v0.1.0, because nothing has been heard through it.
     Building takes a few minutes with the ARM toolchain installed.</p>
   <pre>git clone --recurse-submodules <i data-repo-text></i>
@@ -570,7 +666,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
 
 <section id="install"><div class="wrap">
   <h2 class="sh">Installing</h2>
-  <div class="sub">10 — Through the front USB-C, and getting back to stock</div>
+  <div class="sub">11 — Through the front USB-C, and getting back to stock</div>
   <p class="lede">The Alchemy Lab's bootloader serves DFU on the front-panel USB-C, so the module
     stays in the rack. Once this firmware is on it, so does every update after.</p>
   <div class="cols">
@@ -603,7 +699,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
 
 <section id="built"><div class="wrap">
   <h2 class="sh">How it is built</h2>
-  <div class="sub">11 — The parts worth knowing about</div>
+  <div class="sub">12 — The parts worth knowing about</div>
   <p class="lede">The engine was not touched. Everything below is the layer between it and the
     Alchemy SDK, and the handful of decisions that shaped that layer.</p>
   <div class="tablewrap"><table>
@@ -641,7 +737,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
 
 <section id="family"><div class="wrap">
   <h2 class="sh">The rest of them</h2>
-  <div class="sub">12 — The same engine, and its siblings</div>
+  <div class="sub">13 — The same engine, and its siblings</div>
   <p class="lede">Smack started on the Ableton Move under
     <a href="https://github.com/charlesvestal/schwung">Schwung</a>. The Versio port came next; this
     is the third body for the same engine.</p>
@@ -909,8 +1005,8 @@ const PAGES = [
     { id:"P3", name:"LENGTH", ring:{style:"sel", c:C.len, n:6}, v:2.5/6, sub:"8 · 16 · 32 · 64 · 128 · 256 steps",
       d:"How much of the past CAPTURE grabs, in steps of the clock. While a loop plays, a white pip runs once around this ring per pass. Below about 51 BPM the longest setting drops a notch to fit the buffer.",
       meta:["engine <b>loop_len 3..8</b>","ring <b>6 dots + playhead</b>","deadband <b>2%</b>"] },
-    { id:"P4", name:"SLICE", ring:{style:"sel", c:C.slice, n:4}, v:1.5/4, sub:"Coarse · Medium · Fine · Finest · CV on J7",
-      d:"How finely the loop is cut before the pattern is laid across it. Coarse is a few big pieces; Finest is confetti.",
+    { id:"P4", name:"SLICE", ring:{style:"sel", c:C.slice, n:4}, v:1.5/4, sub:"½ · 1 · 2 · 4 steps per slice · CV on J7",
+      d:"How big a slice is, in clock steps, before the pattern is laid across it. Half a step is confetti; four steps is a few big pieces. Turning up makes them bigger.",
       meta:["engine <b>slice_res 0..3</b>","ring <b>4 dots</b>","CV <b>J7</b>"] },
     { id:"P5", name:"BLEND", ring:{style:"level", c:C.blend}, v:.7, sub:"dry ↔ loop · CV on J6",
       d:"Crossfades the loop against the live input, in the audio callback. Bypassed until a loop exists, so the module is never silent before you capture.",
@@ -1134,6 +1230,136 @@ function setPage(p) {
 document.getElementById("tgPlay").addEventListener("click", () => setPage(0));
 document.getElementById("tgSetup").addEventListener("click", () => setPage(1));
 
+/* ---------- the roll: the engine's pattern generator, ported ---------- */
+const FX = [
+  { n:"Clean",       c:"#2a2636", d:"No effect: the slice as recorded. As a punch it drops the whole pattern out.", r:"—", p:"—" },
+  { n:"Retrig",      c:"#ffb020", d:"Repeats the first part of the slice, decaying.", r:"window ½ · ¼ · ⅛", p:"¼ window" },
+  { n:"Reverse",     c:"#38b6ff", d:"The slice backwards.", r:"—", p:"—" },
+  { n:"Pitch",       c:"#ff4fd8", d:"Varispeed up or down by semitones; wraps within the slice.", r:"±1 … ±PITCH RANGE st", p:"+5 st" },
+  { n:"Speed",       c:"#5ac8ff", d:"Half or double speed.", r:"half · double", p:"double" },
+  { n:"Gate",        c:"#5cff8a", d:"Eight-segment tremolo chop.", r:"—", p:"—" },
+  { n:"Buzz",        c:"#ffd23f", d:"A tiny window repeated, frozen at the slice head.", r:"4 window sizes", p:"size 1" },
+  { n:"Crush",       c:"#ff6a3d", d:"Sample-rate reduction and bit quantising.", r:"depth 2 · 4 · 6 · 8", p:"depth 4" },
+  { n:"Repeat",      c:"#ffc86b", d:"Plays the head of the slice, then stutters it.", r:"split ½ · ¼ · ¾", p:"split ¼" },
+  { n:"Rev After",   c:"#4fd1ff", d:"Forward, then backwards from a split point.", r:"split ½ · ⅔ · ¾", p:"split ⅔" },
+  { n:"Tape Stop",   c:"#7fb8ff", d:"Varispeed ramp down to a stop.", r:"over the slice · fast", p:"over the slice" },
+  { n:"Tape Start",  c:"#9ac2ff", d:"Turntable spin-up from zero.", r:"—", p:"—" },
+  { n:"Scratch",     c:"#3dd9d9", d:"Oscillating playhead, a vinyl wobble.", r:"1 · 2 · 3 cycles", p:"2 cycles" },
+  { n:"Env",         c:"#7dffb0", d:"A volume shape over the slice.", r:"fade-in · fade-out · wobble · half-gate", p:"fade-in" },
+  { n:"Pan",         c:"#a4ffc4", d:"Hard left, hard right, or ping-pong within the slice.", r:"L · R · ping-pong", p:"hard L" },
+  { n:"Filter",      c:"#ff7a7a", d:"A lowpass or highpass sweep across the slice.", r:"4 directions", p:"direction 0" },
+  { n:"Vowel",       c:"#ff9e9e", d:"A morphing three-formant vowel filter.", r:"4 vowel pairs", p:"pair 0" },
+  { n:"Tonal Delay", c:"#5ee0c0", d:"Feedback delay whose time sweeps, so the repeats are pitched.", r:"4 sweeps", p:"sweep 0" },
+  { n:"Freeze",      c:"#ffe38a", d:"Granular freeze on the slice head.", r:"4 sprays", p:"spray 0" },
+  { n:"Delay",       c:"#66d9c9", d:"Tempo-synced echo.", r:"16th · 8th · dotted · ping-pong", p:"16th" },
+  { n:"Dist",        c:"#ff5a5a", d:"Waveshaper dirt.", r:"soft · hard · fold · gnash", p:"soft" },
+  { n:"Phaser",      c:"#d78bff", d:"Four-stage allpass sweep.", r:"up · down · wobble · fast", p:"up" },
+  { n:"Verb",        c:"#8fd6e8", d:"A gated reverb burst.", r:"4 sizes", p:"size 0" },
+  { n:"P-Shift",     c:"#ff8ae8", d:"Granular pitch shift that keeps the timing.", r:"±1 … ±PITCH RANGE st", p:"+7 st, a fifth" },
+  { n:"Ring Mod",    c:"#e07a5f", d:"Sine ring modulator.", r:"6 frequencies / sweeps", p:"220 Hz" },
+  { n:"Comb",        c:"#ff8c5a", d:"Tuned feedback comb.", r:"4 tunings / sweeps", p:"110 Hz" },
+  { n:"Scatter",     c:"#ffdd55", d:"Hash-shuffled grains within the slice.", r:"4 modes", p:"mode 0" },
+];
+const LOOP_HS = [2, 4, 8, 16, 32, 64, 128, 256, 512], SLICE_HS = [1, 2, 4, 8];
+/* xorshift32, rnd01 and rnd_below exactly as smack_core.c has them */
+function xs32(st) { let x = st.v; x = (x ^ (x << 13)) >>> 0; x = (x ^ (x >>> 17)) >>> 0; x = (x ^ (x << 5)) >>> 0; st.v = x; return x; }
+const rnd01 = st => (xs32(st) >>> 8) / 16777216;
+const rndBelow = (st, n) => xs32(st) % n;
+function rollPattern(n, fxPct, ordPct, seed, nonce, pitch) {
+  const st = { v: (seed ^ Math.imul(nonce, 2654435761)) >>> 0 };
+  if (!st.v) st.v = 0xC0FFEE01;
+  const fd = Math.fround(fxPct / 100), od = Math.fround(ordPct / 100);
+  const order = Array.from({ length: n }, (_, i) => i);
+  for (let i = 0; i < n; i++) if (rnd01(st) < od) { const j = rndBelow(st, n); const t = order[i]; order[i] = order[j]; order[j] = t; }
+  const fx = new Array(n).fill(0), fxp = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    let rf = 0, rp = 0;
+    if (rnd01(st) < fd) {
+      const f = 1 + rndBelow(st, FX.length - 1); rf = f;
+      switch (f) {
+        case 1: rp = 1 + rndBelow(st, 3); break;
+        case 3: case 23: { let semi = 1 + rndBelow(st, pitch); if (xs32(st) & 1) semi = -semi; rp = semi; break; }
+        case 4: rp = xs32(st) & 1; break;
+        case 6: rp = xs32(st) & 3; break;
+        case 7: rp = 2 + (xs32(st) & 6); break;
+        case 8: case 9: rp = 1 + rndBelow(st, 3); break;
+        case 10: rp = xs32(st) & 1; break;
+        case 12: rp = 1 + rndBelow(st, 3); break;
+        case 13: rp = rndBelow(st, 4); break;
+        case 14: rp = rndBelow(st, 3); break;
+        case 15: case 16: case 17: case 18: case 19: case 20: case 21: case 22: rp = rndBelow(st, 4); break;
+        case 24: rp = rndBelow(st, 6); break;
+        case 25: case 26: rp = rndBelow(st, 4); break;
+        default: rp = 0;
+      }
+    }
+    fx[i] = rf; fxp[i] = rp;
+  }
+  return { order, fx, fxp };
+}
+function fxpText(f, p) {
+  switch (f) {
+    case 1: return ["½", "¼", "⅛"][p - 1] + " window";
+    case 3: case 23: return (p > 0 ? "+" : "") + p + " st";
+    case 4: return p ? "double" : "half";
+    case 6: return "size " + p;
+    case 7: return "depth " + p;
+    case 8: return "split " + ["½", "¼", "¾"][p - 1];
+    case 9: return "split " + ["½", "⅔", "¾"][p - 1];
+    case 10: return p ? "fast" : "over the slice";
+    case 12: return p + (p === 1 ? " cycle" : " cycles");
+    case 13: return ["fade-in", "fade-out", "wobble", "half-gate"][p];
+    case 14: return ["hard L", "hard R", "ping-pong"][p];
+    case 19: return ["16th", "8th", "dotted", "ping-pong"][p];
+    case 20: return ["soft", "hard", "fold", "gnash"][p];
+    case 21: return ["up", "down", "wobble", "fast"][p];
+    case 2: case 5: case 11: return "";
+    default: return "variant " + p;
+  }
+}
+const R = {
+  len: document.getElementById("rLen"), slice: document.getElementById("rSlice"), fx: document.getElementById("rFx"),
+  ord: document.getElementById("rOrd"), seed: document.getElementById("rSeed"), pitch: document.getElementById("rPitch"),
+  grid: document.getElementById("rollGrid"), stat: document.getElementById("rStat"),
+};
+let rollNonce = 0, rollTaps = 0;
+function renderRoll() {
+  const n = Math.max(1, Math.min(512, LOOP_HS[+R.len.value] / SLICE_HS[+R.slice.value]));
+  const pat = rollPattern(n, +R.fx.value, +R.ord.value, +R.seed.value, rollNonce, +R.pitch.value);
+  document.getElementById("rLenV").textContent = R.len.options[R.len.selectedIndex].text;
+  document.getElementById("rSliceV").textContent = R.slice.options[R.slice.selectedIndex].text;
+  document.getElementById("rFxV").textContent = R.fx.value + "%";
+  document.getElementById("rOrdV").textContent = R.ord.value + "%";
+  document.getElementById("rSeedV").textContent = R.seed.value;
+  document.getElementById("rPitchV").textContent = R.pitch.value + " st";
+  R.grid.className = "grid " + (n <= 64 ? "g-s" : n <= 160 ? "g-m" : "g-l");
+  const frag = document.createDocumentFragment();
+  let nfx = 0, nmv = 0;
+  for (let i = 0; i < n; i++) {
+    const src = pat.order[i], f = pat.fx[i], mv = src !== i;
+    if (f) nfx++; if (mv) nmv++;
+    const d = document.createElement("div");
+    d.className = "cell" + (f ? " fx" : "") + (mv ? " mv" : "");
+    if (f) d.style.background = FX[f].c;
+    const setting = f ? fxpText(f, pat.fxp[i]) : "";
+    d.title = `position ${i + 1}: plays slice ${src + 1}` + (mv ? " (moved)" : "") + (f ? ` · ${FX[f].n}${setting ? " · " + setting : ""}` : " · clean");
+    d.innerHTML = `<span class="ci">${i + 1}</span><span class="cs">${src + 1}</span><span class="cf">${f ? FX[f].n : ""}</span><span class="cp">${setting}</span>`;
+    frag.appendChild(d);
+  }
+  R.grid.textContent = ""; R.grid.appendChild(frag);
+  R.stat.innerHTML = `<b>${n}</b> slices · <b>${nfx}</b> with an effect · <b>${nmv}</b> out of place · seed <b>${R.seed.value}</b> · re-rolls <b>${rollTaps}</b>`;
+}
+[R.len, R.slice, R.fx, R.ord, R.pitch].forEach(e => e.addEventListener("input", renderRoll));
+R.seed.addEventListener("input", () => { rollNonce = 0; rollTaps = 0; renderRoll(); });
+/* a re-roll steps the hidden nonce through the engine's LCG, never the seed */
+document.getElementById("rReroll").addEventListener("click", () => {
+  rollNonce = (Math.imul(rollNonce, 1664525) + 1013904223) >>> 0; if (!rollNonce) rollNonce = 1; rollTaps++; renderRoll(); });
+document.getElementById("rCanon").addEventListener("click", () => { rollNonce = 0; rollTaps = 0; renderRoll(); });
+document.getElementById("rollLeg").innerHTML = FX.slice(1).map(f => `<span><i style="background:${f.c}"></i>${f.n}</span>`).join("");
+document.querySelector("#fxTable tbody").innerHTML = FX.map((f, i) =>
+  `<tr><td>${i}</td><td><i style="background:${f.c}"></i>${f.n}</td><td>${f.d}</td><td>${f.r}</td><td>${f.p}</td></tr>`).join("");
+renderRoll();
+
 /* ---------- boot report simulator ---------- */
 const simSvg = document.getElementById("simRing"), cpu = document.getElementById("cpu");
 function renderCpu() {
@@ -1148,8 +1374,8 @@ function renderCpu() {
   document.getElementById("cpuCap").textContent = v <= 0 ? "first boot after flashing" : v === .03 ? "measured on the bench, idle pass-through" : "shown for 2.5 s at power-up";
   const say = v <= 0 ? "A single dim blue LED means the module has not measured anything yet. Play hard for a few minutes, power-cycle, and look again."
     : v < .75 ? `Green: ${Math.round(v*13)} of 13 LEDs. It fits, with room. The one number that could kill this port is fine at this reading.`
-    : v < .90 ? "Amber: it fits, without much room. Dual mode and Finest slicing with long loops are the settings that push it."
-    : "Red: the callback overran at some point. The B2 light would have gone red while it happened. Shorter LENGTH, coarser SLICE, stereo rather than dual.";
+    : v < .90 ? "Amber: it fits, without much room. Dual mode and half-step slicing with long loops are the settings that push it."
+    : "Red: the callback overran at some point. The B2 light would have gone red while it happened. Shorter LENGTH, bigger SLICE, stereo rather than dual.";
   document.getElementById("cpuVerdict").textContent = say;
 }
 cpu.addEventListener("input", renderCpu);

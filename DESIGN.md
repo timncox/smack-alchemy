@@ -66,7 +66,7 @@ the base page can jump.
 | P1 | **FX** density 0–100 | `fx_density` | level |
 | P2 | **ORDER** density 0–100 | `order_density` | level |
 | P3 | **LENGTH** 8/16/32/64/128/256 steps | `loop_len` 3..8 | 6-zone selector + **playhead pip** once per loop pass |
-| P4 | **SLICE** resolution | `slice_res` 0..3 | 4-zone selector |
+| P4 | **SLICE** size ½ / 1 / 2 / 4 steps (engine order; 0 = finest) | `slice_res` 0..3 | 4-dot selector |
 | P5 | **BLEND** dry ↔ loop | callback crossfade | level |
 | P6 | **DJ FILTER**, notch at centre | callback, last in chain | bipolar |
 
