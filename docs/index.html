@@ -339,9 +339,9 @@ footer p{max-width:70ch}
     <tbody>
       <tr><td>P1</td><td><b>SEED</b></td><td class="num">0–127</td><td><span class="sw" style="color:var(--c-seed)"></span>level</td></tr>
       <tr><td>P2</td><td><b>PITCH RANGE</b>, how far the pitch effects may reach</td><td class="num">1–24 semitones</td><td><span class="sw" style="color:var(--c-pitch)"></span>level</td></tr>
-      <tr><td>P3</td><td><b>CLOCK RATIO</b>, applied to what arrives at J3</td><td>÷2 · =1 · ×2</td><td><span class="sw" style="color:var(--c-ratio)"></span>3 zones</td></tr>
+      <tr><td>P3</td><td><b>CLOCK RATIO</b>, applied to what arrives at J3</td><td>÷2 · =1 · ×2</td><td><span class="sw" style="color:var(--c-ratio)"></span>3 dots</td></tr>
       <tr><td>P4</td><td><b>PUNCH FX</b>, what B2 forces every slice through</td><td>Clean + 26 effects</td><td><span class="sw" style="color:var(--c-punch)"></span>level</td></tr>
-      <tr><td>P5</td><td><b>MODE</b>, one stereo loop or two independent mono ones</td><td>Stereo · Dual</td><td><span class="sw" style="color:var(--c-mode)"></span>2 zones</td></tr>
+      <tr><td>P5</td><td><b>MODE</b>, one stereo loop or two independent mono ones</td><td>Stereo · Dual</td><td><span class="sw" style="color:var(--c-mode)"></span>2 dots</td></tr>
       <tr><td>P6</td><td><b>TEMPO</b>, used when nothing is clocking it</td><td class="num">50–200 BPM</td><td><span class="sw" style="color:var(--c-tempo)"></span>level</td></tr>
     </tbody>
   </table></div>
@@ -453,13 +453,13 @@ footer p{max-width:70ch}
   <div class="tablewrap"><table>
     <thead><tr><th>Where</th><th>Shows</th></tr></thead>
     <tbody>
-      <tr><td>All six rings</td><td>The pot's value: a bar for continuous ones, a lit zone for stepped ones, both halves for the DJ filter. SETUP colours appear while B3 is held.</td></tr>
+      <tr><td>All six rings</td><td>The pot's value: a bar for continuous ones, one dot per step for stepped ones with the current step bright, two arms from a white pivot for the DJ filter. SETUP colours appear while B3 is held.</td></tr>
       <tr><td>LENGTH ring</td><td>A white pip runs once around the arc per loop pass while a loop plays.</td></tr>
       <tr><td>B1 · STATE</td><td><span class="sw" style="color:#3050ff"></span>dim blue idle · <span class="sw" style="color:var(--s-amber)"></span>amber armed · <span class="sw" style="color:var(--s-red)"></span>red recording · <span class="sw" style="color:var(--s-green)"></span>green looping · <span class="sw" style="color:var(--s-cyan)"></span>cyan LIVE · <span class="sw" style="color:var(--s-white)"></span>white while a PUNCH is held</td></tr>
       <tr><td>B2 · CLOCK</td><td><span class="sw" style="color:var(--s-blue)"></span>blue external clock · <span class="sw" style="color:var(--s-purple)"></span>purple inferred from triggers · <span class="sw" style="color:#909090"></span>grey free-running · <span class="sw" style="color:var(--s-red)"></span><b>red = the audio callback is above 80%</b></td></tr>
       <tr><td>B3 · SETUP</td><td>A dim violet tint while the PLAY page is up; the SDK lights it in the page colour while SETUP is held.</td></tr>
       <tr><td>P1 ring, first 2.5 s</td><td>Last session's worst CPU load, as a bar. See below.</td></tr>
-      <tr><td>All six buttons red</td><td>The engine could not allocate its buffer. It needs 27.6 MB of a 32 MB pool, so this should be impossible; it fails loudly rather than running silently broken.</td></tr>
+      <tr><td>All three buttons red</td><td>The engine could not allocate its buffer. It needs 27.6 MB of a 32 MB pool, so this should be impossible; it fails loudly rather than running silently broken.</td></tr>
     </tbody>
   </table></div>
 
@@ -487,7 +487,7 @@ footer p{max-width:70ch}
   <h3 class="h">Settings — hold B2 + B3 for two seconds</h3>
   <div class="sub">The SDK's own settings layer; B1 steps through its pages, B2 or B3 leaves</div>
   <div class="cols">
-    <div class="card"><div class="k">Page 1</div><h4>Module</h4>
+    <div class="card"><div class="k">Page 1</div><h4>Brightness · presets · clock in</h4>
       <p><b>P1</b> ring brightness. <b>P3 / P4</b> preset slot and action, sixteen slots. <b>P5</b>
         CLOCK IN: Auto or Clock.</p></div>
     <div class="card"><div class="k">Page 2</div><h4>Firmware</h4>
@@ -541,10 +541,14 @@ footer p{max-width:70ch}
   </div>
 
   <p style="margin-top:22px">The erase runs one 64 KB sector per frame and the write one 4 KB
-    chunk per frame, with the LEDs and buttons alive throughout; the verify compares the slot
-    through the memory-mapped view, then hands over to the bootloader with the grace window
-    skipped so the new firmware simply starts. Audio keeps passing during the erase and write,
-    since nothing this firmware runs lives in the slot it is rewriting.</p>
+    chunk per frame, between LED frames; the verify compares the slot through the memory-mapped
+    view, then hands over to the bootloader with the grace window skipped so the new firmware
+    simply starts. Nothing this firmware runs lives in the slot it is rewriting, so audio is
+    meant to keep passing, though a sector erase blocks for a good fraction of a second and the
+    rings will stutter through it.</p>
+  <p><b>None of this section has been exercised against a card yet.</b> The picker compiles, its
+    buffers sit where the SD controller can reach them, and the flash path has been reasoned
+    through against the memory map; it has not yet listed a file or written one.</p>
 </div></section>
 
 <section id="build"><div class="wrap">
@@ -904,10 +908,10 @@ const PAGES = [
       meta:["engine <b>order_density</b>","ring <b>level</b>","CV <b>J5</b>"] },
     { id:"P3", name:"LENGTH", ring:{style:"sel", c:C.len, n:6}, v:2.5/6, sub:"8 · 16 · 32 · 64 · 128 · 256 steps",
       d:"How much of the past CAPTURE grabs, in steps of the clock. While a loop plays, a white pip runs once around this ring per pass. Below about 51 BPM the longest setting drops a notch to fit the buffer.",
-      meta:["engine <b>loop_len 3..8</b>","ring <b>6 zones + playhead</b>","deadband <b>2%</b>"] },
+      meta:["engine <b>loop_len 3..8</b>","ring <b>6 dots + playhead</b>","deadband <b>2%</b>"] },
     { id:"P4", name:"SLICE", ring:{style:"sel", c:C.slice, n:4}, v:1.5/4, sub:"Coarse · Medium · Fine · Finest · CV on J7",
       d:"How finely the loop is cut before the pattern is laid across it. Coarse is a few big pieces; Finest is confetti.",
-      meta:["engine <b>slice_res 0..3</b>","ring <b>4 zones</b>","CV <b>J7</b>"] },
+      meta:["engine <b>slice_res 0..3</b>","ring <b>4 dots</b>","CV <b>J7</b>"] },
     { id:"P5", name:"BLEND", ring:{style:"level", c:C.blend}, v:.7, sub:"dry ↔ loop · CV on J6",
       d:"Crossfades the loop against the live input, in the audio callback. Bypassed until a loop exists, so the module is never silent before you capture.",
       meta:["where <b>callback</b>","ring <b>level</b>","CV <b>J6</b>"] },
@@ -924,13 +928,13 @@ const PAGES = [
       meta:["engine <b>pitch_range</b>","ring <b>level</b>","default <b>12 st</b>"] },
     { id:"P3", name:"CLOCK RATIO", ring:{style:"sel", c:C.ratio, n:3}, v:.5, sub:"÷2 · =1 · ×2",
       d:"Applied to whatever arrives at J3, so a 16th-note clock and a quarter-note clock both work.",
-      meta:["target <b>clock adapter</b>","ring <b>3 zones</b>","default <b>=1</b>"] },
+      meta:["target <b>clock adapter</b>","ring <b>3 dots</b>","default <b>=1</b>"] },
     { id:"P4", name:"PUNCH FX", ring:{style:"level", c:C.punch}, v:1.5/27, sub:"Clean + 26 effects",
       d:"What B2 forces every slice through while held. Clean is the bottom of the list and drops the pattern instead of adding to it; Retrig is the default.",
       meta:["target <b>B2</b>","ring <b>level, 27 steps</b>","default <b>Retrig</b>"] },
     { id:"P5", name:"MODE", ring:{style:"sel", c:C.mode, n:2}, v:.25, sub:"Stereo · Dual",
       d:"One stereo loop, or two independent mono loops on the two channels.",
-      meta:["engine <b>channel_mode</b>","ring <b>2 zones</b>","default <b>Stereo</b>"] },
+      meta:["engine <b>channel_mode</b>","ring <b>2 dots</b>","default <b>Stereo</b>"] },
     { id:"P6", name:"TEMPO", ring:{style:"level", c:C.tempo}, v:(120-50)/150, sub:"50–200 BPM, free-run",
       d:"Used when nothing is clocking the module. When a clock locks, its tempo becomes the new default here and the pot adopts it, with catch.",
       meta:["target <b>clock adapter</b>","ring <b>level</b>","remembered <b>across power</b>"] },
@@ -982,15 +986,18 @@ function ringColours(ring, v) {
     const n = Math.round(v * N);
     for (let i = 0; i < N; i++) out[i] = i < n ? ring.c : C.dim;
   } else if (ring.style === "sel") {
+    /* the SDK's default selector: one LED per zone spread across the arc,
+     * the current zone bright, the others in the dim inactive colour */
     const z = Math.min(ring.n - 1, Math.floor(v * ring.n));
-    const a = Math.round(z * N / ring.n), b = Math.round((z + 1) * N / ring.n);
-    for (let i = 0; i < N; i++) out[i] = (i >= a && i < b) ? ring.c : C.dim;
+    for (let i = 0; i < N; i++) out[i] = null;
+    for (let q = 0; q < ring.n; q++) out[Math.round(q * (N - 1) / (ring.n - 1))] = (q === z) ? ring.c : C.dim;
   } else if (ring.style === "bipolar") {
+    /* two arms from a pivot at the arc midpoint; the pivot LED stays white */
     const mid = (N - 1) / 2, s = v * 2 - 1;
     for (let i = 0; i < N; i++) out[i] = C.dim;
-    if (Math.abs(s) < 0.06) out[mid] = C.notch;
-    else if (s < 0) { const k = Math.round(-s * mid); for (let i = mid; i >= mid - k; i--) out[i] = C.lp; }
-    else { const k = Math.round(s * mid); for (let i = mid; i <= mid + k; i++) out[i] = C.hp; }
+    out[mid] = C.notch;
+    if (s < -0.06) { const k = Math.round(-s * mid); for (let i = mid - 1; i >= mid - k; i--) out[i] = C.lp; }
+    else if (s > 0.06) { const k = Math.round(s * mid); for (let i = mid + 1; i <= mid + k; i++) out[i] = C.hp; }
   } else if (ring.style === "boot") {
     /* the boot report: no data = one dim blue LED at the start; else a bar */
     for (let i = 0; i < N; i++) out[i] = C.dim;
@@ -1009,7 +1016,7 @@ function drawRing(g, cx, cy, ring, v, pip) {
     if (pip != null && i === Math.round(pip * (geo.arc_leds - 1))) c = C.white;
     const lit = arc && c && c !== C.dim;
     if (lit) el("circle", { cx:x, cy:y, r:1.55, fill:c, opacity:.22 }, g);
-    el("circle", { cx:x, cy:y, r:.72, fill: arc ? (c || C.dim) : "#101014", opacity: arc ? 1 : .6 }, g);
+    el("circle", { cx:x, cy:y, r:.72, fill: arc ? (c || "#0e0d13") : "#101014", opacity: arc ? 1 : .6 }, g);
   }
 }
 function drawKnob(g, cx, cy, v) {
