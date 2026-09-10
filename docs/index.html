@@ -605,9 +605,11 @@ footer p{max-width:70ch}
         the root and put firmware images in it: any <code>.bin</code> built for the Alchemy Lab
         bootloader, this one included. On a Mac, run <code>dot_clean</code> on the card before
         ejecting so the picker does not list resource forks.</p></div>
-    <div class="card"><div class="k">Or over USB</div><h4>HostLink's file panel</h4>
-      <p>Files reach the card without pulling it: the web programmer's file panel talks to the
-        same folder over the front USB-C while the module runs.</p></div>
+    <div class="card"><div class="k">Or over USB</div><h4>Without pulling the card</h4>
+      <p>Files reach the card over USB while the module runs: the web programmer's file panel,
+        or the repository's <code>tools/hostlink-fs.mjs</code>, which makes the folder and puts
+        the images in it from a terminal. Uploads are staged and renamed onto their final name
+        only after the firmware has checked the CRC.</p></div>
   </div>
 
   <h3 class="h">The gesture</h3>
@@ -642,9 +644,10 @@ footer p{max-width:70ch}
     simply starts. Nothing this firmware runs lives in the slot it is rewriting, so audio is
     meant to keep passing, though a sector erase blocks for a good fraction of a second and the
     rings will stutter through it.</p>
-  <p><b>None of this section has been exercised against a card yet.</b> The picker compiles, its
-    buffers sit where the SD controller can reach them, and the flash path has been reasoned
-    through against the memory map; it has not yet listed a file or written one.</p>
+  <p><b>What has and has not run.</b> The card side is proven: a card in the module has been
+    written and read back byte-identical over USB, through the same mount and buffers the picker
+    uses. The picker's own path, listing the folder and writing the slot, has not yet run; its
+    flash path has been reasoned through against the memory map, not exercised.</p>
 </div></section>
 
 <section id="build"><div class="wrap">
