@@ -60,6 +60,21 @@ front-panel template by `tools/emit_panel_geometry.py`; run it with
 never hand-edit the coordinates. The repository URL the page links to is one
 constant at the top of the file.
 
+## Files on the card over USB
+
+`tools/hostlink-fs.mjs` speaks HostLink's filesystem block, so images reach
+the card without pulling it:
+
+```sh
+node tools/hostlink-fs.mjs info                       # mounted? FAT32? size
+node tools/hostlink-fs.mjs ls /alchemy
+node tools/hostlink-fs.mjs mkdir /alchemy
+node tools/hostlink-fs.mjs put build/smack_alchemy.bin /alchemy/smack_alchemy.bin --overwrite
+```
+
+The picker lists files in on-disk order, one dot each, so the order you
+upload them is the order the FILE pot walks.
+
 ## Not a Hermetic Modular product
 
 Custom firmware. Hermetic Modular did not write, test or endorse it; ask
