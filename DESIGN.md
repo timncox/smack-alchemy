@@ -17,7 +17,10 @@ smack-versio's DESIGN.md; keep that discipline.
   24 ppqn MIDI clock, three tiers (external / inferred / free-run), AUTO
   detection. ✅ 7 native tests.
 - **The DJ filter** (`dj_filter.h`): one sweep, LP left, HP right, real
-  bypass at the notch. ✅ measured natively.
+  bypass at the notch. ✅ measured natively. The filter is always in the
+  chain here (Versio only ran it in its DJ role), and even "open" its
+  biquads take ~0.5 dB off 8 kHz, so the callback skips the block entirely
+  at exactly 0 and resets the integrators on the way out.
 - **The allocator** (`versio_alloc.[ch]`): a bump allocator so
   `smack_create()`'s four `calloc`s land in a 32 MB SDRAM pool with no
   engine edits. ✅ native test. The name is provenance, not platform.
@@ -96,7 +99,10 @@ selector pots on the layer.
 | B2 + B3 | hold 2 s | Settings (SDK) |
 
 The Versio needed its MODE switch to turn the one button into a punch;
-here punch and capture coexist. Versio's triple-tap config layer is
+here punch and capture coexist. One consequence: B2 is also half of the
+Settings chord, so holding B2+B3 punches for the two seconds before
+Settings opens, then releases. Suppressing punch while B3 is down would
+cost punch on the SETUP page, a worse trade. Versio's triple-tap config layer is
 replaced by the SETUP page and Settings. Gestures are hand-rolled from
 `Pressed()` at the 1 ms poll (`OnPoll`), as on Versio, because the SDK's
 ButtonBank has no double-tap by design.
@@ -169,7 +175,10 @@ covers — one — with yields between them (✅ `preset_store.h`).
 
 At boot: `BootLoad()` restores slot 0, then the **PLAY page adopts the
 physical pots** (`SetStored = phys`) so base knobs are live with no catch to
-cross; SETUP keeps its stored values and catches. First boot after a flash
+cross; SETUP keeps its stored values and catches. `Deserialize` leaves the
+Pager a deferred re-arm for its first `Update()`; I observe (`pager.cpp`
+`LockPage`) it only re-runs `InitCatch` against phys and never writes the
+stored values, so the adopt survives it. First boot after a flash
 seeds SETUP with seed 0, 12 semitones, ratio =1, punch RETRIG, stereo,
 120 BPM.
 

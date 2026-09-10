@@ -848,8 +848,25 @@ static void AudioCallback(daisy::AudioHandle::InputBuffer  in,
     }
 
     /* DJ filter, last, on everything the module puts out -- the one control
-     * that does something before a loop exists. The notch is a real bypass. */
-    dj_filter_block(&djf_state, buff, (int)(2 * size), G_DJ_CTL);
+     * that does something before a loop exists. The notch is a real bypass:
+     * at exactly 0 the block is skipped, because even "open" the biquads
+     * shave ~0.5 dB off 8 kHz (test_dj_filter), and the integrators are
+     * cleared on the way out so re-engaging starts from silence, as the
+     * Versio's role switch did. */
+    {
+        static bool dj_on = false;
+        const float ctl   = G_DJ_CTL;
+        if (ctl != 0.0f)
+        {
+            dj_on = true;
+            dj_filter_block(&djf_state, buff, (int)(2 * size), ctl);
+        }
+        else if (dj_on)
+        {
+            dj_on = false;
+            dj_filter_reset(&djf_state);
+        }
+    }
 
     for (size_t i = 0; i < size; i++)
     {
@@ -968,7 +985,11 @@ int main(void)
     }
 
     /* The PLAY page comes up honest: whatever a pot points at is what the
-     * module does, no catch to cross first. Setup keeps its stored values. */
+     * module does, no catch to cross first. Setup keeps its stored values.
+     * BootLoad() left the Pager a deferred re-arm for its first Update();
+     * that only re-runs InitCatch against phys (pager.cpp LockPage) and
+     * never touches the stored values, so these survive it, and a stored
+     * value equal to phys re-arms as "caught". */
     for (uint8_t p = 0; p < kNumPots; p++)
         pager.SetStored(kPagePlay, p, phys[p], phys);
 
