@@ -574,6 +574,28 @@ static void OnFrame(void)
     const uint32_t now = System::GetNow();
     int            v;
 
+    /* The PLAY page is worth a flash write too. It used to follow the pots
+     * at every boot, so saving it bought nothing; now that a saved PLAY page
+     * is restored (the pots catch it), a change there must reach the slot or
+     * it is lost at the next firmware switch or power cycle. The stored
+     * values move only when a caught pot moves, and the 1 % step keeps ADC
+     * noise from re-arming the autosave. The first frame only primes. */
+    {
+        static float play_seen[kNumPots];
+        static bool  primed = false;
+        for (uint8_t p = 0; p < kNumPots; p++)
+        {
+            const float s = pager.Stored(kPagePlay, p);
+            if (!primed) { play_seen[p] = s; continue; }
+            if (fabsf(s - play_seen[p]) > 0.01f)
+            {
+                play_seen[p] = s;
+                mark_dirty(now);
+            }
+        }
+        primed = true;
+    }
+
     /* PLAY page. Values are catch + locks + CV, already mixed by the SDK. */
     dispatch(k_fx,    fx.Norm());
     dispatch(k_order, order.Norm());
