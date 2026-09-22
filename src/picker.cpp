@@ -55,6 +55,8 @@ enum class St : uint8_t
     NoDir,
     Empty,
     Listed,
+    Comparing,  /* reading the file against the running image, before any erase */
+    Same,       /* it IS the running image: nothing written, no reboot */
     Erasing,
     Writing,
     Verifying,
@@ -102,6 +104,8 @@ constexpr LedPanel::Rgb kArm     = {0xFF, 0x60, 0x00};
 constexpr LedPanel::Rgb kErase   = {0xFF, 0xA0, 0x00};
 constexpr LedPanel::Rgb kWrite   = {0x20, 0x60, 0xFF};
 constexpr LedPanel::Rgb kVerify  = {0x20, 0xFF, 0x60};
+constexpr LedPanel::Rgb kCompare = {0x20, 0xC0, 0xC0};
+constexpr LedPanel::Rgb kSame    = {0x40, 0xFF, 0x60};
 constexpr LedPanel::Rgb kDone    = {0xFF, 0xFF, 0xFF};
 constexpr LedPanel::Rgb kError   = {0xFF, 0x00, 0x00};
 constexpr LedPanel::Rgb kDfu     = {0xC0, 0x20, 0xFF};
@@ -199,7 +203,39 @@ void begin_flash(uint32_t now)
     g.off      = 0;
     g.erased   = 0;
     g.progress = 0.0f;
-    g.st       = St::Erasing;
+    g.st       = St::Comparing;
+}
+
+/* Before anything is erased: is the chosen file the image already in the
+ * slot? Picking the firmware that is running should cost nothing -- no
+ * erase, no write, no reboot, no lost loops. The slot is read through the
+ * memory-mapped QSPI view (mapped since DaisySeed::Init for BOOT_SRAM apps,
+ * the same view step_verify reads). The first differing chunk hands over to
+ * the normal erase / write / verify path from the top of the file. */
+void step_compare()
+{
+    SdCard::BusyGuard guard(*g.sd);
+    UINT n = 0;
+    if (f_read(&s_fil, s_chunk, kChunk, &n) != FR_OK || n == 0) { fail("read"); return; }
+
+    const uint8_t* mm = (const uint8_t*)(uintptr_t)(kAppSlot + g.off);
+    SCB_InvalidateDCache_by_Addr((uint32_t*)(uintptr_t)mm, (int32_t)((n + 31u) & ~31u));
+    if (memcmp(mm, s_chunk, n) != 0)
+    {
+        f_lseek(&s_fil, 0);
+        g.off      = 0;
+        g.progress = 0.0f;
+        g.st       = St::Erasing;
+        return;
+    }
+
+    g.off     += n;
+    g.progress = (float)g.off / (float)g.img_size;
+    if (g.off >= g.img_size)
+    {
+        f_close(&s_fil);
+        g.st = St::Same;
+    }
 }
 
 void step_erase()
@@ -278,7 +314,8 @@ void FileTick(SettingsSlot& slot, float phys, uint32_t t_ms)
     {
         g.flash_armed = false;
         g.dfu_armed   = false;
-        if (g.st != St::Erasing && g.st != St::Writing && g.st != St::Verifying)
+        if (g.st != St::Comparing && g.st != St::Erasing && g.st != St::Writing
+            && g.st != St::Verifying)
             g.st = St::Unscanned;
     }
 
@@ -363,6 +400,7 @@ void FlashTick(SettingsSlot& slot, float phys, uint32_t t_ms)
                 begin_flash(t_ms);
             }
             break;
+        case St::Comparing: step_compare(); break;
         case St::Erasing:   step_erase();  break;
         case St::Writing:   step_write();  break;
         case St::Verifying: step_verify(); break;
@@ -372,6 +410,7 @@ void FlashTick(SettingsSlot& slot, float phys, uint32_t t_ms)
             daisy::System::ResetToBootloader(
                 daisy::System::BootloaderMode::DAISY_SKIP_TIMEOUT);
             break;
+        case St::Same:
         case St::Error:
             /* Back off the pot to acknowledge, then the list comes back. */
             if (phys < kArmBelow) g.st = St::Unscanned;
@@ -393,6 +432,8 @@ void FlashRender(const SettingsSlot& slot, LedPanel& L, uint8_t pot,
             fill_ring(L, pot, geo, slot.pot.stored,
                       g.flash_armed ? kArm : LedPanel::Scale(kArm, 0.25f));
             break;
+        case St::Comparing: fill_ring(L, pot, geo, g.progress, kCompare); break;
+        case St::Same:      fill_ring(L, pot, geo, 1.0f, kSame);         break;
         case St::Erasing:   fill_ring(L, pot, geo, g.progress, kErase);  break;
         case St::Writing:   fill_ring(L, pot, geo, g.progress, kWrite);  break;
         case St::Verifying: fill_ring(L, pot, geo, g.progress, kVerify); break;
@@ -413,7 +454,8 @@ void FlashRender(const SettingsSlot& slot, LedPanel& L, uint8_t pot,
 void DfuTick(SettingsSlot& slot, float phys, uint32_t t_ms)
 {
     (void)slot; (void)t_ms;
-    if (g.st == St::Erasing || g.st == St::Writing || g.st == St::Verifying) return;
+    if (g.st == St::Comparing || g.st == St::Erasing || g.st == St::Writing
+        || g.st == St::Verifying) return;
     if (phys < kArmBelow) g.dfu_armed = true;
     if (g.dfu_armed && phys > kFireAbove)
         daisy::System::ResetToBootloader(
@@ -470,7 +512,8 @@ void Install(Settings& settings, uint8_t page, SdCard& sd, AlchemyLab& hw)
               "the Alchemy Lab bootloader in a folder named `alchemy` on "
               "the card. **File** picks one; **Flash** writes it, verifies "
               "it and reboots into it -- turn the pot down first, then all "
-              "the way up. **DFU** reboots into the bootloader's update mode "
+              "the way up. Picking the firmware that is already running "
+              "changes nothing and does not reboot. **DFU** reboots into the bootloader's update mode "
               "the same way, for firmware without a picker of its own.");
 
     settings.Page(page).Pot(0).Custom()
@@ -483,8 +526,11 @@ void Install(Settings& settings, uint8_t page, SdCard& sd, AlchemyLab& hw)
     settings.Page(page).Pot(1).Custom()
         .Tick(FlashTickTracked).Render(FlashRender)
         .Ident("fw.flash").Name("Flash")
-        .Help("Turn down past the arming point, then all the way up. Orange "
-              "while erasing, blue while writing, green while verifying, "
+        .Help("Turn down past the arming point, then all the way up. Teal "
+              "while it checks the file against the running firmware; a solid "
+              "green ring means they are the same, so nothing is written and "
+              "nothing reboots (turn down to go back to the list). Otherwise "
+              "orange while erasing, blue while writing, green while verifying, "
               "white and a reboot when the image checks out. Blinking red: "
               "it failed and nothing was booted; turn down to try again.");
 
@@ -497,7 +543,8 @@ void Install(Settings& settings, uint8_t page, SdCard& sd, AlchemyLab& hw)
 
 bool Busy()
 {
-    return g.st == St::Erasing || g.st == St::Writing || g.st == St::Verifying;
+    return g.st == St::Comparing || g.st == St::Erasing || g.st == St::Writing
+        || g.st == St::Verifying;
 }
 
 } // namespace picker
