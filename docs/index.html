@@ -38,7 +38,7 @@
   --s-cyan:#00c0c0; --s-white:#ffffff; --s-grey:#606060; --s-purple:#8000c0; --s-blue:#0050ff;
   /* the picker */
   --k-file:#40ff60; --k-fileoff:#101810; --k-nocard:#800000; --k-nodir:#803000;
-  --k-arm:#ff6000; --k-erase:#ffa000; --k-write:#2060ff; --k-verify:#20ff60; --k-done:#ffffff; --k-dfu:#c020ff;
+  --k-arm:#ff6000; --k-compare:#20c0c0; --k-same:#40ff60; --k-erase:#ffa000; --k-write:#2060ff; --k-verify:#20ff60; --k-done:#ffffff; --k-dfu:#c020ff;
 
   --disp:"Bricolage Grotesque","Archivo Black",Impact,"Helvetica Neue",sans-serif;
   --body:"Instrument Sans","Helvetica Neue",Arial,sans-serif;
@@ -234,12 +234,16 @@ footer p{max-width:70ch}
       <div class="tagline">Catch what you just played. Cut it up. Let a seed decide the rest.</div>
 
       <div class="note">
-        <h3>Built and booting. Not yet heard.</h3>
-        <p>v0.1.0 compiles, passes its native test suites, boots on the module and answers
-          HostLink over USB; its own load meter read <b>3.3% peak</b> at idle pass-through,
-          on USB power with the codec unpowered. <b>Nothing has been heard through it yet.</b>
-          The first rack power-up is still ahead, so every claim below about sound is a
-          claim about the same engine on the Versio, where it has been played.</p>
+        <h3>Racked and heard. Not everything tried yet.</h3>
+        <p>On 22 September 2026 it ran in a rack on a powered Alchemy Lab and <b>made sound</b>:
+          audio in, a loop captured, audio out. On the same module the SD picker switched between
+          Smack, Mark and Belt and back, and Smack's settings were still there when it came back.
+          On the bench, before racking, its own load meter read <b>3.3% peak</b> at idle
+          pass-through.</p>
+        <p><b>Not yet tried on the module:</b> the pattern stepping with a clock on J3, fast rates
+          included; the CV inputs J4 to J8; and a cold power cycle keeping its settings. What
+          this page says about those is what the code does and what the native tests show, not
+          what has been heard.</p>
       </div>
     </div>
     <div class="heroplate">
@@ -273,7 +277,7 @@ footer p{max-width:70ch}
     independently of the pots, and 102 LEDs to say what is going on. It also brings something
     the engine never had a place for before: <a href="#card">firmware swapping from the SD
     card</a>, so this module can carry several firmwares and change between them in a settings
-    page.</p>
+    page, each keeping its own settings.</p>
 </div></section>
 
 <section id="panel"><div class="wrap">
@@ -377,11 +381,16 @@ footer p{max-width:70ch}
   <p style="margin-top:20px"><b>Opening the page to look cannot change anything.</b> The SDK's pot
     catch runs on the way in and on the way out: a SETUP pot only takes effect once you turn it
     through the value it already holds, and letting go of B3 hands the pots back to the PLAY page
-    without jumping anything. The six SETUP values are saved to flash a few seconds after you
-    stop moving them and come back at the next power-up. The PLAY page, by contrast, always comes
-    up honest: at boot, whatever a pot points at is what the module does.</p>
-  <p>First boot after flashing seeds the page with SEED 0, a 12-semitone pitch range, ratio =1,
-    punch RETRIG, stereo, 120 BPM.</p>
+    without jumping anything. Both pages are saved to flash a few seconds after you stop moving
+    a pot, and come back the next time Smack starts.</p>
+  <p><b>The PLAY page comes back where you left it, and the pots catch it.</b> The six pots are
+    shared by every firmware on the card, so after switching back from Mark or Belt they point
+    wherever that firmware left them. Smack does not adopt those positions: each PLAY pot keeps
+    its saved value and takes over only once you turn it through that value, the same catch the
+    SETUP page uses. The one exception is the first boot after flashing, when nothing is saved
+    yet and the PLAY page takes whatever the pots point at.</p>
+  <p>First boot after flashing seeds the SETUP page with SEED 0, a 12-semitone pitch range,
+    ratio =1, punch RETRIG, stereo, 120 BPM.</p>
 
   <div class="note" style="margin-top:30px">
     <h3>PUNCH — hold B2</h3>
@@ -510,8 +519,10 @@ footer p{max-width:70ch}
   <p><b>J3 is read raw in the audio callback</b>, not through the SDK's 20 Hz pot filter, which
     would smear a pulse. It fires on the <em>magnitude</em> of the swing away from the jack's
     calibrated zero, 1.5 V to assert and 0.5 V to release, so a pulse counts whichever way the
-    front end signs it. This is the one part of the port that native tests cannot reach; it is
-    unheard.</p>
+    front end signs it. This is the one part of the port that native tests cannot reach, and a
+    clock on J3 has not yet been tried on the racked module. Use a pulse of 5 ms or longer: the
+    jack is read once per 128-sample block, so a trigger under about 3 ms can fall between two
+    reads and be missed.</p>
 </div></section>
 
 <section id="cv"><div class="wrap">
@@ -534,7 +545,8 @@ footer p{max-width:70ch}
   </table></div>
   <p style="margin-top:20px">SEED under CV is the one to patch first: a slow LFO or a sequencer
     into J8 walks the pattern through the seed space, one arrangement per step, without touching
-    the loop. FX and ORDER under CV is the thing this hardware does that the Move version cannot.</p>
+    the loop. FX and ORDER under CV is the thing this hardware does that the Move version cannot.
+    None of J4 to J8 has been tried on the racked module yet.</p>
   <p>The routing is fixed in v0.1.0. Two things the platform makes possible and this version does
     not yet do: choosing the routing from the Settings pages, and a <b>CV output</b>, a per-slice
     trigger out of one of these same jacks, which no other platform this engine runs on can
@@ -585,7 +597,10 @@ footer p{max-width:70ch}
   <div class="cols">
     <div class="card"><div class="k">Page 1</div><h4>Brightness · presets · clock in</h4>
       <p><b>P1</b> ring brightness. <b>P3 / P4</b> preset slot and action, sixteen slots. <b>P5</b>
-        CLOCK IN: Auto or Clock.</p></div>
+        CLOCK IN: Auto (the default) or Clock.</p>
+      <p style="margin-top:10px">Save your own presets to the first twelve slots. The last four
+        hold the working state of Smack, Mark, Belt and Relay, one each, in that order; saving a
+        preset into one of them by hand replaces that firmware's working state.</p></div>
     <div class="card"><div class="k">Page 2</div><h4>Firmware</h4>
       <p>The SD card picker: <b>P1</b> file, <b>P2</b> flash, <b>P3</b> DFU. The next section is
         about it.</p></div>
@@ -597,7 +612,10 @@ footer p{max-width:70ch}
   <div class="sub">09 — Carry several firmwares, change between them from the panel</div>
   <p class="lede">Hermetic's firmware treats the SD card as a place for presets and files. This one
     also reads <code>.bin</code> files from it, and can write one into the module's firmware slot,
-    verify it, and reboot into it, from a settings page, with the module on and in the rack.</p>
+    verify it, and reboot into it, from a settings page, with the module on and in the rack.
+    Mark and Belt for the Alchemy Lab carry the same page, and each of the three keeps its
+    working state in a preset slot of its own, so switching away and back finds Smack as you
+    left it.</p>
 
   <div class="cols">
     <div class="card"><div class="k">Prepare the card</div><h4>FAT32, a folder named alchemy</h4>
@@ -619,8 +637,8 @@ footer p{max-width:70ch}
     <tbody>
       <tr><td>P1 · FILE</td><td>Picks a file. One dot per <code>.bin</code> in the folder, the chosen one bright; turn to move the choice.</td>
         <td><span class="sw" style="color:var(--k-file)"></span>green dots · <span class="sw" style="color:#c00000"></span>red: no card · <span class="sw" style="color:#c04800"></span>orange: no folder, or no files</td></tr>
-      <tr><td>P2 · FLASH</td><td>Writes the chosen file. <b>Turn it down below 85%, then all the way up.</b> The dip arms it, so a pot that happens to be parked at maximum cannot fire on entry. The arc shows the arming bar, dim until the dip has been seen.</td>
-        <td><span class="sw" style="color:var(--k-erase)"></span>orange erasing · <span class="sw" style="color:var(--k-write)"></span>blue writing · <span class="sw" style="color:var(--k-verify)"></span>green verifying · <span class="sw" style="color:var(--k-done)"></span>white, then reboot · <span class="sw" style="color:var(--k-arm)"></span><b>blinking red: failed, nothing booted; turn down to try again</b></td></tr>
+      <tr><td>P2 · FLASH</td><td>Writes the chosen file. <b>Turn it down below 85%, then all the way up.</b> The dip arms it, so a pot that happens to be parked at maximum cannot fire on entry. The arc shows the arming bar, dim until the dip has been seen. <b>It compares before it erases:</b> if the chosen file is the firmware already running, nothing is written and nothing reboots; turn down to go back to the list.</td>
+        <td><span class="sw" style="color:var(--k-compare)"></span>teal comparing · <span class="sw" style="color:var(--k-same)"></span><b>solid green: already loaded, nothing to do</b> · <span class="sw" style="color:var(--k-erase)"></span>orange erasing · <span class="sw" style="color:var(--k-write)"></span>blue writing · <span class="sw" style="color:var(--k-verify)"></span>green verifying · <span class="sw" style="color:var(--k-done)"></span>white, then reboot · <span class="sw" style="color:var(--k-arm)"></span><b>blinking red: failed, nothing booted; turn down to try again</b></td></tr>
       <tr><td>P3 · DFU</td><td>Same gesture. Reboots into the bootloader's update mode and stays there for a USB flash: the escape hatch for a firmware that has no picker of its own.</td>
         <td><span class="sw" style="color:var(--k-dfu)"></span>violet arming bar</td></tr>
     </tbody>
@@ -644,17 +662,23 @@ footer p{max-width:70ch}
     simply starts. Nothing this firmware runs lives in the slot it is rewriting, so audio is
     meant to keep passing, though a sector erase blocks for a good fraction of a second and the
     rings will stutter through it.</p>
-  <p><b>What has and has not run.</b> The card side is proven: a card in the module has been
-    written and read back byte-identical over USB, through the same mount and buffers the picker
-    uses. The picker's own path, listing the folder and writing the slot, has not yet run; its
-    flash path has been reasoned through against the memory map, not exercised.</p>
+  <p>Before any of that, the picker reads the file against the slot through the same
+    memory-mapped view. If every byte matches, it stops there: picking the firmware that is
+    already running costs nothing, and a loop in progress keeps playing. The first byte that
+    differs hands over to the erase, write and verify, from the top of the file.</p>
+  <p><b>What has run.</b> On 22 September 2026, on a racked module, the picker listed the card's
+    folder and switched between Smack, Mark and Belt, and Smack came back with its own
+    settings; picking the one already loaded gave the solid green ring and
+    no reboot. The failure paths, a refused image and a failed write, have been reasoned
+    through against the memory map but not exercised.</p>
 </div></section>
 
 <section id="build"><div class="wrap">
   <h2 class="sh">Build it</h2>
   <div class="sub">10 — No release yet; the source is the download</div>
-  <p class="lede">There is no packaged release of v0.1.0, because nothing has been heard through it.
-    Building takes a few minutes with the ARM toolchain installed.</p>
+  <p class="lede">There is no packaged release of v0.1.0 yet: it has been played on one module,
+    and the clock and CV inputs are still untried. Building takes a few minutes with the ARM
+    toolchain installed.</p>
   <pre>git clone --recurse-submodules <i data-repo-text></i>
 cd smack-alchemy
 make libdaisy        <b># once</b>
@@ -687,16 +711,17 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
         picker</a>.</p></div>
     <div class="card"><div class="k">Back to stock</div><h4>Same door</h4>
       <p>Flashing any Alchemy Lab firmware, Hermetic's own included, the same way returns the
-        module to it. Presets in the slots survive; this firmware's own preset is in slot 1 and is
-        schema-guarded, so another firmware will not read it as its own.</p></div>
+        module to it. Presets in the slots survive; this firmware's working state is in its own
+        slot, the thirteenth of sixteen, and is schema-guarded, so another firmware will not read
+        it as its own.</p></div>
   </div>
   <div class="note warn" style="margin-top:30px">
     <h3>Before you flash it</h3>
     <p>It is custom firmware. Hermetic Modular did not write it, did not test it and cannot
-      support it, so <b>please do not contact them about it</b>. And as of v0.1.0 it has not been
-      heard by anyone, its author included. If you run it before that changes, the two things
-      worth reporting are whether J3 locks to your clock and what the boot report reads after a
-      hard session.</p>
+      support it, so <b>please do not contact them about it</b>. It has been played on one
+      module, its author's, and the clock and CV inputs have not yet been tried there. If you run
+      it, the two things worth reporting are whether J3 locks to your clock and what the boot
+      report reads after a hard session.</p>
   </div>
 </div></section>
 
@@ -709,8 +734,8 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
     <thead><tr><th>Piece</th><th>What it is</th></tr></thead>
     <tbody>
       <tr><td>Two pages, one layer</td><td>The SDK's Pager makes SETUP a held layer on B3 with pot catch on the way in and out. Nothing on the PLAY page can jump because you looked at the other one.</td></tr>
-      <tr><td>Working preset</td><td>Slot 1 is the live state: both pages, the Settings and two extras, the free-run tempo and the CPU peak. It autosaves five seconds after the last change with hands off the buttons, one 4 KB sector per save, behind epsilons so a drifting number cannot wear the flash.</td></tr>
-      <tr><td>The picker</td><td>Three Custom slots on a Settings page: a file scanner, a state machine that erases, writes and verifies one step per frame, and a DFU hand-off. Its buffers live in AXI SRAM because the SD controller's DMA cannot reach the tightly-coupled memory the rest of the firmware's data uses.</td></tr>
+      <tr><td>Working preset</td><td>Smack's own slot, the thirteenth of sixteen (12 counting from zero; Mark, Belt and Relay have the three after it), holds the live state: both pages, the Settings and two extras, the free-run tempo and the CPU peak. It autosaves five seconds after the last change on either page with hands off the buttons and the picker idle, one 4 KB sector per save, behind epsilons so a drifting number cannot wear the flash. At boot the home slot wins; a module whose state was saved by an older build in the first slot carries it over once. Loops are never saved.</td></tr>
+      <tr><td>The picker</td><td>Three Custom slots on a Settings page: a file scanner, a state machine that compares, then erases, writes and verifies, one step per frame, and a DFU hand-off. Shared, by copy, with Mark and Belt. Its buffers live in AXI SRAM because the SD controller's DMA cannot reach the tightly-coupled memory the rest of the firmware's data uses.</td></tr>
       <tr><td>Clock adapter</td><td>Gate edges become 24 ppqn MIDI clock, three tiers (external, inferred, free-run) with auto-detection. Seven native tests, unchanged from the Versio.</td></tr>
       <tr><td>Ring recorder</td><td>150 seconds, sized to hold <em>two</em> of the longest loop, so the loop that is playing is protected from the recorder.</td></tr>
       <tr><td>SDRAM allocator</td><td>A bump pool in external RAM, 27.6 MB of 32 MB, so the engine's four <code>calloc</code>s land there with no engine edits.</td></tr>
@@ -734,7 +759,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
     <div class="card"><div class="k">Memory</div><h4>150 s buffer</h4><p>27.6 MB used of a 32 MB SDRAM pool, of 64 MB available.</p></div>
     <div class="card"><div class="k">Effects</div><h4>26 + clean</h4><p>One per slice at a time, not all at once, which is what makes the CPU question winnable.</p></div>
     <div class="card"><div class="k">Controls</div><h4>6 × 2 · 3 · 6</h4><p>Six pots on two pages, three buttons, six CV inputs independent of the pots, 102 LEDs.</p></div>
-    <div class="card"><div class="k">Storage</div><h4>16 slots + card</h4><p>Sixteen preset slots in QSPI flash; firmware images and files on a FAT32 microSD.</p></div>
+    <div class="card"><div class="k">Storage</div><h4>16 slots + card</h4><p>Sixteen preset slots in QSPI flash, the thirteenth Smack's working state; firmware images and files on a FAT32 microSD.</p></div>
   </div>
 </div></section>
 
@@ -1055,7 +1080,7 @@ const BUTTONS = [
 const JACKS = {
   J1:{ name:"IN L",  sub:"audio in, left",  d:"Left channel in. AC-coupled codec input; this is what the recorder listens to.", meta:["kind <b>codec in</b>"] },
   J2:{ name:"IN R",  sub:"audio in, right", d:"Right channel in. In Dual mode this channel gets its own loop.", meta:["kind <b>codec in</b>"] },
-  J3:{ name:"CLOCK / TRIG", sub:"gate in · Auto or Clock in Settings", d:"A steady train is a clock; sporadic hits are capture triggers with the tempo inferred. Read raw in the audio callback, on the magnitude of the swing from the calibrated zero. Unheard.", meta:["assert <b>1.5 V</b>","release <b>0.5 V</b>","ratio <b>SETUP P3</b>"] },
+  J3:{ name:"CLOCK / TRIG", sub:"gate in · Auto or Clock in Settings", d:"A steady train is a clock; sporadic hits are capture triggers with the tempo inferred. Read raw in the audio callback, on the magnitude of the swing from the calibrated zero. Not yet tried on the racked module; use a pulse of 5 ms or longer.", meta:["assert <b>1.5 V</b>","release <b>0.5 V</b>","ratio <b>SETUP P3</b>"] },
   J4:{ name:"CV → FX",    sub:"±5 V, summed with PLAY P1",  d:"Adds to the FX pot's value.", meta:["drives <b>PLAY P1</b>"] },
   J5:{ name:"CV → ORDER", sub:"±5 V, summed with PLAY P2",  d:"Adds to the ORDER pot's value.", meta:["drives <b>PLAY P2</b>"] },
   J6:{ name:"CV → BLEND", sub:"±5 V, summed with PLAY P5",  d:"Adds to the BLEND pot's value.", meta:["drives <b>PLAY P5</b>"] },
