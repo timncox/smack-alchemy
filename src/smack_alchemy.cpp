@@ -1217,8 +1217,15 @@ int main(void)
     g_saved_peak     = 0.0f;
     g_readout_until  = System::GetNow() + 2500u;
 
-    hw.ProcessAllControls();
-    const bool force_mac = hw.buttons[kButtonB1].Pressed();
+    /* B1 held through power-up: Mac mode this boot. Read over ~20 ms so
+     * the debouncer has settled whatever came before. */
+    bool force_mac = false;
+    for (int i = 0; i < 20; i++)
+    {
+        hw.ProcessAllControls();
+        System::Delay(1);
+    }
+    force_mac = hw.buttons[kButtonB1].Pressed();
     g_lp_mode    = (int)usb_port.Value() == 1 && !force_mac;
     g_lp_boot_ms = System::GetNow();
 

@@ -11,13 +11,14 @@
 #define DMA_SECTION __attribute__((section(".sram1_bss")))
 
 #define HUB_CLASS 0x09U
-#define DEV_ADDR  0x02U /* the hub keeps USBH_DEVICE_ADDRESS (1) */
+#define DEV_ADDR0 0x02U /* first device address; the hub keeps USBH_DEVICE_ADDRESS (1) */
 
 /* USB 2.0 chapter 11. */
 #define HUB_REQ_GET_STATUS    0x00U
 #define HUB_REQ_CLEAR_FEATURE 0x01U
 #define HUB_REQ_SET_FEATURE   0x03U
 #define HUB_DESC_TYPE         0x29U
+#define PORT_ENABLE           1U
 #define PORT_RESET            4U
 #define PORT_POWER            8U
 #define C_PORT_CONNECTION     16U
@@ -49,6 +50,7 @@ enum
     S_RX,
     S_RX_POLL,
     S_FAILED,
+    S_REJECT,     /* the device is not MIDI: switch its port off, scan on */
 };
 
 typedef struct
@@ -57,6 +59,10 @@ typedef struct
     uint8_t  ports;
     uint16_t pwr_wait_ms;
     uint8_t  port;      /* port being scanned / used, 1-based */
+    uint16_t skip;      /* ports whose device was not MIDI (bit n = port n) */
+    uint8_t  dev_addr;  /* address for the device being enumerated */
+    uint8_t  hub_mps;   /* the hub's control max packet size */
+    uint8_t  rejects;
     uint32_t t0;
     uint16_t port_status, port_change;
     uint8_t  dev_mps0;
@@ -105,7 +111,10 @@ static void fail(USBH_StatusTypeDef st)
 {
     H.fail_state = H.state;
     H.fail_code  = (uint8_t)st;
-    H.state      = S_FAILED;
+    /* A device behind the hub that will not enumerate, or is not MIDI (a
+     * dongle's own Ethernet chip, a card reader), costs its port, not the
+     * hub: switch the port off and keep scanning. */
+    H.state = (H.state >= S_DEV_DESC8 && H.state <= S_DEV_SET_CFG) ? S_REJECT : S_FAILED;
 }
 
 /* Step a control request: OK -> next state, BUSY -> stay, else fail. */
@@ -156,6 +165,8 @@ static USBH_StatusTypeDef Init(USBH_HandleTypeDef *ph)
 {
     memset(&H, 0, sizeof H);
     H.state                   = S_HUB_DESC;
+    H.hub_mps                 = (uint8_t)ph->Control.pipe_size;
+    H.dev_addr                = DEV_ADDR0;
     ph->pActiveClass->pData   = &H;
     return USBH_OK;
 }
@@ -218,7 +229,7 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
             {
                 H.port_status = le16(&s_ctl[0]);
                 H.port_change = le16(&s_ctl[2]);
-                if (H.port_status & PS_CONNECTION)
+                if ((H.port_status & PS_CONNECTION) && !(H.skip & (1U << H.port)))
                 {
                     if (H.port_status & PS_LOW_SPEED) { fail(USBH_NOT_SUPPORTED); break; }
                     H.state = S_CLR_C_CONN;
@@ -293,13 +304,13 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
             break;
 
         case S_DEV_ADDR:
-            if (step(USBH_SetAddress(ph, DEV_ADDR), S_DEV_ADDR_WAIT)) H.t0 = now;
+            if (step(USBH_SetAddress(ph, H.dev_addr), S_DEV_ADDR_WAIT)) H.t0 = now;
             break;
 
         case S_DEV_ADDR_WAIT:
             if (now - H.t0 >= 5U)
             {
-                ctl_target(ph, DEV_ADDR, H.dev_mps0);
+                ctl_target(ph, H.dev_addr, H.dev_mps0);
                 H.state = S_DEV_DESC18;
             }
             break;
@@ -338,11 +349,11 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
             if (step(USBH_SetCfg(ph, H.cfg_value), S_RX))
             {
                 H.in_pipe = USBH_AllocPipe(ph, H.in_ep);
-                USBH_OpenPipe(ph, H.in_pipe, H.in_ep, DEV_ADDR, ph->device.speed,
+                USBH_OpenPipe(ph, H.in_pipe, H.in_ep, H.dev_addr, ph->device.speed,
                               USBH_EP_BULK, H.in_size);
                 USBH_LL_SetToggle(ph, H.in_pipe, 0U);
                 H.out_pipe = USBH_AllocPipe(ph, H.out_ep);
-                USBH_OpenPipe(ph, H.out_pipe, H.out_ep, DEV_ADDR, ph->device.speed,
+                USBH_OpenPipe(ph, H.out_pipe, H.out_ep, H.dev_addr, ph->device.speed,
                               USBH_EP_BULK, H.out_size);
                 USBH_LL_SetToggle(ph, H.out_pipe, 0U);
                 H.ready = 1;
@@ -369,6 +380,32 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
             }
             break;
         }
+
+        case S_REJECT:
+            /* Back to the hub, turn the port off, never pick it again. A
+             * fresh address for the next device, so nothing stale answers. */
+            if (ph->RequestState == CMD_SEND) /* before each new request */
+                ctl_target(ph, USBH_DEVICE_ADDRESS, H.hub_mps);
+            if (step(ctl(ph, USB_H2D | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
+                         HUB_REQ_CLEAR_FEATURE, PORT_ENABLE, H.port, 0, 0),
+                     S_SCAN))
+            {
+                H.skip |= (uint16_t)(1U << H.port);
+                H.rejects++;
+                H.dev_addr = (uint8_t)(H.dev_addr + 1U);
+                H.port     = 1;
+            }
+            else if (H.state == S_FAILED)
+            {
+                /* The hub itself would not answer: give up on this port
+                 * anyway rather than the whole hub. */
+                H.skip |= (uint16_t)(1U << H.port);
+                H.rejects++;
+                H.dev_addr = (uint8_t)(H.dev_addr + 1U);
+                H.port     = 1;
+                H.state    = S_SCAN;
+            }
+            break;
 
         default: break;
     }
@@ -426,5 +463,6 @@ HUBMIDI_Info HUBMIDI_GetInfo(void)
     i.pid         = H.pid;
     i.fail_state  = H.fail_state;
     i.fail_code   = H.fail_code;
+    i.skipped     = H.skip;
     return i;
 }

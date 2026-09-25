@@ -13,13 +13,15 @@
  *     hub runs its upstream at full speed and passes full-speed packets
  *     through unchanged: no split transactions. Low-speed devices (which
  *     would need PRE packets) are refused;
- *   - the hub stays at address 1 (the core enumerates it), the device is
- *     given address 2 here. After the device is configured the hub is not
- *     polled again; an unplug surfaces as transfer errors / a host reset.
+ *   - the hub stays at address 1 (the core enumerates it); devices behind
+ *     it get addresses 2, 3, ... here. A device that is not MIDI (many
+ *     dongles carry an Ethernet chip on a port, e.g. Realtek 0bda:8153) or
+ *     will not enumerate has its port switched off and is skipped.
+ *     After the MIDI device is configured the hub is not polled again; an unplug surfaces as transfer errors / a host reset.
  *
  * It registers as the class for bInterfaceClass 0x09, enumerates the device
  * behind the hub itself with standard control requests (re-pointing the
- * core's control pipes at address 0, then 2), opens the device's bulk MIDI
+ * core's control pipes at address 0, then the new address), opens the device's bulk MIDI
  * endpoints and runs the same receive loop as usbh_midi.c.
  */
 #ifndef USBH_HUB_MIDI_H
@@ -56,6 +58,7 @@ typedef struct
     uint16_t vid, pid;     /* the device behind the hub */
     uint8_t  fail_state;   /* the state that failed, 0 = none */
     uint8_t  fail_code;    /* USBH_StatusTypeDef of that failure */
+    uint16_t skipped;      /* ports rejected (bit n = port n) */
 } HUBMIDI_Info;
 HUBMIDI_Info HUBMIDI_GetInfo(void);
 

@@ -309,9 +309,9 @@ int Report(char* b, int cap)
     OUT("rx %lu tx %lu\n", (unsigned long)g_rx_count, (unsigned long)g_tx_count);
     {
         const HUBMIDI_Info h = HUBMIDI_GetInfo();
-        OUT("hub: active %d state %u ports %u port %u status %04x behind %04x:%04x fail state %u code %u\n",
+        OUT("hub: active %d state %u ports %u port %u status %04x behind %04x:%04x last fail state %u code %u skipped ports %04x\n",
             (int)via_hub(), h.state, h.ports, h.port, h.port_status, h.vid, h.pid,
-            h.fail_state, h.fail_code);
+            h.fail_state, h.fail_code, h.skipped);
     }
     if (g_cc_seen)
     {
