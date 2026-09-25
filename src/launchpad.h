@@ -101,3 +101,50 @@ uint32_t RxCount();
 uint32_t TxCount();
 
 } // namespace lp
+
+/* ---------------------------------------------------------------------------
+ * Novation Launch Control XL (0x1235:0x0061), alongside the Mini through the
+ * same hub. The driver selects factory template 1 at connect (and again if
+ * the template is changed on the device); the MIDI channel is ignored.
+ * Knobs: 3 rows x 8 (CC 13-20, 29-36, 49-56), faders: 8 (CC 77-84),
+ * buttons: 2 rows x 8 under the faders (notes 41-44 57-60 / 73-76 89-92).
+ * Knob and fader values are kept as a table -- read them with Knob()/Fader(),
+ * which say whether the value changed since the last read -- so a fast
+ * sweep never overflows a queue. Button presses are queued.
+ */
+namespace xl
+{
+
+/* LED colour: red 0..3, green 0..3 (bicolour). */
+constexpr uint8_t Col(uint8_t red, uint8_t green)
+{
+    return (uint8_t)(((green & 3u) << 4) | (red & 3u) | 0x0Cu);
+}
+constexpr uint8_t kOff      = Col(0, 0);
+constexpr uint8_t kRed      = Col(3, 0);
+constexpr uint8_t kRedDim   = Col(1, 0);
+constexpr uint8_t kGreen    = Col(0, 3);
+constexpr uint8_t kGreenDim = Col(0, 1);
+constexpr uint8_t kAmber    = Col(3, 3);
+constexpr uint8_t kAmberDim = Col(1, 1);
+
+struct Button
+{
+    uint8_t row; /* 0 = upper row, 1 = lower row */
+    uint8_t col; /* 0..7 */
+    bool    down;
+};
+
+bool Connected();
+/* True if the control moved since the last call; *v is its value 0..127. */
+bool Knob(uint8_t row, uint8_t col, uint8_t* v);
+bool Fader(uint8_t col, uint8_t* v);
+/* The last value seen, whether or not it changed. */
+uint8_t KnobValue(uint8_t row, uint8_t col);
+uint8_t FaderValue(uint8_t col);
+bool PopButton(Button* b);
+
+void SetKnobLed(uint8_t row, uint8_t col, uint8_t colour);
+void SetButtonLed(uint8_t row, uint8_t col, uint8_t colour);
+
+} // namespace xl

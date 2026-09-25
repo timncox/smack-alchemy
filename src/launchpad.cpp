@@ -11,6 +11,158 @@
 
 extern "C" USBH_HandleTypeDef hUsbHostHS; /* libDaisy's host handle */
 
+namespace xl { void Flush_(); }
+
+/* ============================================================== transport */
+/*
+ * A "link" is one USB-MIDI device the host can talk to: the device plugged
+ * straight in (libDaisy's MIDI class), or one of the hub driver's slots.
+ * Devices are recognised by vendor/product id and bound to a role.
+ */
+namespace
+{
+
+constexpr uint16_t kNovation = 0x1235;
+constexpr uint16_t kPidMini  = 0x0113; /* Launchpad Mini MK3 */
+constexpr uint16_t kPidXl    = 0x0061; /* Launch Control XL */
+
+constexpr int kDirect   = 0;                         /* link id: no hub */
+constexpr int kHub0     = 1;                         /* link id: hub slot 0 */
+constexpr int kLinks    = 1 + HUBMIDI_MAX_DEVICES;
+constexpr int kNone     = -1;
+
+daisy::USBHostHandle g_usbh;
+bool                 g_direct_ready = false; /* MIDI class active, pipes open */
+bool                 g_failed       = false; /* abort, unsupported or error seen */
+int                  g_mini_link    = kNone;
+int                  g_xl_link      = kNone;
+
+uint32_t g_rx_count = 0, g_tx_count = 0;
+
+bool via_hub() { return g_usbh.IsActiveClass(USBH_HUB_MIDI_CLASS); }
+
+bool link_ready(int link)
+{
+    if (link == kDirect) return g_direct_ready && g_usbh.IsActiveClass(USBH_MIDI_CLASS);
+    return HUBMIDI_DevReady(&hUsbHostHS, (uint8_t)(link - kHub0));
+}
+
+void link_id(int link, uint16_t* vid, uint16_t* pid)
+{
+    if (link == kDirect)
+    {
+        *vid = hUsbHostHS.device.DevDesc.idVendor;
+        *pid = hUsbHostHS.device.DevDesc.idProduct;
+    }
+    else
+        HUBMIDI_DevId((uint8_t)(link - kHub0), vid, pid);
+}
+
+uint16_t link_out_size(int link)
+{
+    if (link == kDirect)
+    {
+        if (!hUsbHostHS.pActiveClass || !hUsbHostHS.pActiveClass->pData) return 0;
+        return ((const MIDI_HandleTypeDef*)hUsbHostHS.pActiveClass->pData)->OutEpSize;
+    }
+    return HUBMIDI_OutSize(&hUsbHostHS, (uint8_t)(link - kHub0));
+}
+
+/* Non-blocking; false = busy or gone, nothing was sent. */
+bool link_send(int link, uint8_t* buf, uint16_t len)
+{
+    const bool ok = (link == kDirect)
+                        ? USBH_MIDI_Transmit(&hUsbHostHS, buf, len) == MIDI_OK
+                        : HUBMIDI_Transmit(&hUsbHostHS, (uint8_t)(link - kHub0), buf, len)
+                              == USBH_OK;
+    if (ok) g_tx_count++;
+    return ok;
+}
+
+/* Each device has its own transmit buffer: two transfers may be in flight. */
+uint8_t DMA_BUFFER_MEM_SECTION g_tx_mini[64];
+uint8_t DMA_BUFFER_MEM_SECTION g_tx_xl[64];
+
+void mini_rx(uint8_t* buf, size_t len);
+void xl_rx(uint8_t* buf, size_t len);
+void mini_bound();
+void xl_bound();
+
+void dispatch(int link, uint8_t* buf, size_t len)
+{
+    g_rx_count++;
+    if (link == g_mini_link) mini_rx(buf, len);
+    else if (link == g_xl_link) xl_rx(buf, len);
+}
+
+void on_rx_direct(uint8_t* buf, size_t len, void*) { dispatch(kDirect, buf, len); }
+void on_rx_hub(uint8_t dev, uint8_t* buf, size_t len, void*)
+{
+    dispatch(kHub0 + dev, buf, len);
+}
+
+void on_class_active(void*)
+{
+    if (!g_usbh.IsActiveClass(USBH_MIDI_CLASS)) return;
+    USBH_MIDI_SetReceiveCallback(&hUsbHostHS, on_rx_direct, nullptr);
+    g_direct_ready = true;
+}
+
+void on_error(void*) { g_failed = true; }
+
+void on_disconnect(void*)
+{
+    g_direct_ready = false;
+    g_mini_link    = kNone;
+    g_xl_link      = kNone;
+}
+
+/* Bind ready links to roles by id; drop roles whose link went away. */
+void bind()
+{
+    if (g_mini_link != kNone && !link_ready(g_mini_link)) g_mini_link = kNone;
+    if (g_xl_link != kNone && !link_ready(g_xl_link)) g_xl_link = kNone;
+    for (int l = 0; l < kLinks; l++)
+    {
+        if (l == g_mini_link || l == g_xl_link || !link_ready(l)) continue;
+        uint16_t vid = 0, pid = 0;
+        link_id(l, &vid, &pid);
+        if (vid != kNovation) continue;
+        if (pid == kPidMini && g_mini_link == kNone) { g_mini_link = l; mini_bound(); }
+        else if (pid == kPidXl && g_xl_link == kNone) { g_xl_link = l; xl_bound(); }
+    }
+}
+
+/* ---------------------------------------------------------------- USB-MIDI */
+
+/* SysEx bytes as USB-MIDI packets on one cable; returns packets written. */
+int sysex_packets(const uint8_t* sx, int n, uint8_t cable, uint8_t* out)
+{
+    int k = 0, i = 0;
+    while (i < n)
+    {
+        const int rest = n - i;
+        uint8_t*  p    = &out[4 * k++];
+        if (rest > 3)
+        {
+            p[0] = (uint8_t)((cable << 4) | 0x4);
+            p[1] = sx[i]; p[2] = sx[i + 1]; p[3] = sx[i + 2];
+            i += 3;
+        }
+        else
+        {
+            p[0] = (uint8_t)((cable << 4) | (rest == 1 ? 0x5 : rest == 2 ? 0x6 : 0x7));
+            p[1] = sx[i]; p[2] = rest > 1 ? sx[i + 1] : 0; p[3] = rest > 2 ? sx[i + 2] : 0;
+            i += rest;
+        }
+    }
+    return k;
+}
+
+} // namespace
+
+/* ============================================================== Launchpad Mini MK3 */
+
 namespace lp
 {
 
@@ -24,43 +176,26 @@ constexpr int kLogo  = 80;
 constexpr int kCells = 81;
 constexpr uint8_t kUnknown = 0xFF; /* not yet sent since connect */
 
-daisy::USBHostHandle g_usbh;
-bool                 g_ready     = false; /* MIDI class active, pipes open */
-bool                 g_failed    = false; /* abort, unsupported or error seen */
-bool                 g_need_init = false; /* send Programmer mode next */
-int                  g_rx_cable  = -1;    /* cable events are taken from */
+bool g_need_init = false; /* send Programmer mode next */
+int  g_rx_cable  = -1;    /* cable events are taken from */
 
 uint8_t g_want[kCells];
 uint8_t g_sent[kCells];
 int     g_scan = 0; /* where the next diff scan starts, for fairness */
 
-/* USB transfers come from the host DMA: keep the buffer out of DTCM. */
-uint8_t DMA_BUFFER_MEM_SECTION g_tx[64];
-
 constexpr int kQueue = 64;
 Event         g_q[kQueue];
 volatile int  g_qhead = 0, g_qtail = 0;
 
-uint32_t g_rx_count = 0, g_tx_count = 0;
-
-Diag    g_diag     = {0, 0, false, 0};
-uint8_t g_last_gs  = 0;
-uint8_t g_last_es  = 0;
+Diag    g_diag    = {0, 0, false, 0};
+uint8_t g_last_gs = 0;
+uint8_t g_last_es = 0;
 
 /* Transition trace: (ms, host state, enum state). */
 struct Tr { uint32_t t; uint8_t gs, es; };
-constexpr int kTrace = 96;
+constexpr int kTrace = 64;
 Tr      g_tr[kTrace];
 int     g_tr_n = 0;
-
-/* What the host held when it reached CHECK_CLASS the first time. */
-bool     g_cc_seen = false;
-uint8_t  g_cc_dev[18];
-uint8_t  g_cc_cfg[64];
-uint16_t g_cc_total = 0;
-uint8_t  g_cc_nif = 0, g_cc_if0c = 0, g_cc_if1c = 0, g_cc_if1s = 0, g_cc_if1ep = 0;
-uint16_t g_cc_vid = 0, g_cc_pid = 0;
-uint32_t g_cc_classnum = 0;
 
 void push(Kind k, uint8_t x, uint8_t y, bool down)
 {
@@ -68,61 +203,6 @@ void push(Kind k, uint8_t x, uint8_t y, bool down)
     if (next == g_qtail) return; /* full: drop, never block */
     g_q[g_qhead] = Event{k, x, y, down};
     g_qhead      = next;
-}
-
-/* USB-MIDI event packets, 4 bytes each: [cable|CIN, status, data1, data2]. */
-void on_rx(uint8_t* buf, size_t len, void*)
-{
-    for (size_t i = 0; i + 3 < len; i += 4)
-    {
-        const uint8_t cin   = buf[i] & 0x0F;
-        const int     cable = buf[i] >> 4;
-        const uint8_t st    = buf[i + 1] & 0xF0;
-        const uint8_t d1    = buf[i + 2];
-        const uint8_t d2    = buf[i + 3];
-        if (cin != 0x8 && cin != 0x9 && cin != 0xB) continue; /* notes and CCs only */
-        if (g_rx_cable < 0) g_rx_cable = cable;
-        if (cable != g_rx_cable) continue; /* the same press may come on both */
-        g_rx_count++;
-        const int row = d1 / 10, col = d1 % 10;
-        if (row < 1 || row > 9 || col < 1 || col > 9) continue;
-        const bool down = (st != 0x80) && d2 > 0;
-        if (row == 9)
-        {
-            if (col <= 8) push(Kind::Top, (uint8_t)(col - 1), 0, down);
-        }
-        else if (col == 9)
-            push(Kind::Side, 0, (uint8_t)(8 - row), down);
-        else
-            push(Kind::Grid, (uint8_t)(col - 1), (uint8_t)(8 - row), down);
-    }
-}
-
-void on_class_active(void*)
-{
-    if (!g_usbh.IsActiveClass(USBH_MIDI_CLASS)) return;
-    USBH_MIDI_SetReceiveCallback(&hUsbHostHS, on_rx, nullptr);
-    g_ready     = true;
-    g_need_init = true;
-    g_rx_cable  = -1;
-}
-
-void on_error(void*) { g_failed = true; }
-
-void on_disconnect(void*)
-{
-    g_ready     = false;
-    g_need_init = false;
-}
-
-bool via_hub() { return g_usbh.IsActiveClass(USBH_HUB_MIDI_CLASS); }
-
-uint16_t out_ep_size()
-{
-    if (via_hub()) return HUBMIDI_OutSize(&hUsbHostHS);
-    if (!hUsbHostHS.pActiveClass || !hUsbHostHS.pActiveClass->pData) return 0;
-    const MIDI_HandleTypeDef* h = (const MIDI_HandleTypeDef*)hUsbHostHS.pActiveClass->pData;
-    return h->OutEpSize;
 }
 
 /* One LED as a USB-MIDI packet on the given cable. */
@@ -142,9 +222,11 @@ void cell_packet(int i, uint8_t col, uint8_t cable, uint8_t* p)
 
 void flush()
 {
-    uint16_t ep = out_ep_size();
+    const int link = g_mini_link;
+    if (link == kNone) return;
+    uint16_t ep = link_out_size(link);
     if (ep < 4) return;
-    if (ep > sizeof g_tx) ep = sizeof g_tx;
+    if (ep > sizeof g_tx_mini) ep = sizeof g_tx_mini;
     const int max_pk = ep / 4;
     int       n      = 0;
 
@@ -154,12 +236,9 @@ void flush()
     if (init)
     {
         /* Programmer mode, F0 00 20 29 02 0D 0E 01 F7, on both cables. */
-        static const uint8_t pk[12] = {0x04, 0xF0, 0x00, 0x20, 0x04, 0x29, 0x02, 0x0D,
-                                       0x07, 0x0E, 0x01, 0xF7};
-        memcpy(g_tx, pk, 12);
-        memcpy(g_tx + 12, pk, 12);
-        for (int k = 0; k < 3; k++) g_tx[12 + 4 * k] |= 0x10;
-        n = 6;
+        static const uint8_t sx[9] = {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7};
+        n  = sysex_packets(sx, 9, 0, g_tx_mini);
+        n += sysex_packets(sx, 9, 1, g_tx_mini + 4 * n);
     }
     else
     {
@@ -168,20 +247,16 @@ void flush()
         {
             const int i = (g_scan + k) % kCells;
             if (g_want[i] == g_sent[i]) continue;
-            cell_packet(i, g_want[i], 0, &g_tx[4 * n]);
-            cell_packet(i, g_want[i], 1, &g_tx[4 * (n + 1)]);
+            cell_packet(i, g_want[i], 0, &g_tx_mini[4 * n]);
+            cell_packet(i, g_want[i], 1, &g_tx_mini[4 * (n + 1)]);
             sent_idx[sent_n++] = i;
             n += 2;
         }
         if (n == 0) return;
     }
 
-    const bool ok = via_hub()
-                        ? HUBMIDI_Transmit(&hUsbHostHS, g_tx, (uint16_t)(4 * n)) == USBH_OK
-                        : USBH_MIDI_Transmit(&hUsbHostHS, g_tx, (size_t)(4 * n)) == MIDI_OK;
-    if (!ok) return; /* busy or error: try again next poll, nothing is marked sent */
+    if (!link_send(link, g_tx_mini, (uint16_t)(4 * n))) return; /* retry next poll */
 
-    g_tx_count++;
     if (init)
     {
         g_need_init = false;
@@ -206,7 +281,7 @@ void Init()
     g_usbh.Init(cfg);
     g_usbh.RegisterClass(USBH_MIDI_CLASS);
     g_usbh.RegisterClass(USBH_HUB_MIDI_CLASS);   /* a powered adapter with a hub */
-    HUBMIDI_SetReceiveCallback(on_rx, nullptr);
+    HUBMIDI_SetReceiveCallback(on_rx_hub, nullptr);
 }
 
 void Poll(uint32_t now)
@@ -217,54 +292,31 @@ void Poll(uint32_t now)
     if ((gs != g_last_gs || es != g_last_es) && g_tr_n < kTrace)
         g_tr[g_tr_n++] = Tr{now, gs, es};
     g_last_es = es;
-    if (gs == HOST_CHECK_CLASS && !g_cc_seen)
+    if (gs == HOST_ABORT_STATE && g_last_gs != HOST_ABORT_STATE)
     {
-        g_cc_seen = true;
-        memcpy(g_cc_dev, hUsbHostHS.device.Data, sizeof g_cc_dev);
-        memcpy(g_cc_cfg, hUsbHostHS.device.CfgDesc_Raw, sizeof g_cc_cfg);
-        g_cc_total    = hUsbHostHS.device.CfgDesc.wTotalLength;
-        g_cc_nif      = hUsbHostHS.device.CfgDesc.bNumInterfaces;
-        g_cc_if0c     = hUsbHostHS.device.CfgDesc.Itf_Desc[0].bInterfaceClass;
-        g_cc_if1c     = hUsbHostHS.device.CfgDesc.Itf_Desc[1].bInterfaceClass;
-        g_cc_if1s     = hUsbHostHS.device.CfgDesc.Itf_Desc[1].bInterfaceSubClass;
-        g_cc_if1ep    = hUsbHostHS.device.CfgDesc.Itf_Desc[1].bNumEndpoints;
-        g_cc_vid      = hUsbHostHS.device.DevDesc.idVendor;
-        g_cc_pid      = hUsbHostHS.device.DevDesc.idProduct;
-        g_cc_classnum = hUsbHostHS.ClassNumber;
-    }
-    if (gs == HOST_ABORT_STATE)
-    {
-        if (g_last_gs != HOST_ABORT_STATE)
+        if (g_diag.aborts == 0)
         {
-            if (g_diag.aborts == 0)
-            {
-                g_diag.state_before_abort = g_last_gs;
-                g_diag.enum_at_abort      = (uint8_t)(hUsbHostHS.EnumState + 1);
-            }
-            if (g_diag.aborts < 0xFFFF) g_diag.aborts++;
+            g_diag.state_before_abort = g_last_gs;
+            g_diag.enum_at_abort      = (uint8_t)(hUsbHostHS.EnumState + 1);
         }
+        if (g_diag.aborts < 0xFFFF) g_diag.aborts++;
     }
     g_last_gs = gs;
-    if (hUsbHostHS.device.DevDesc.idVendor == 0x1235) g_diag.vid_ok = true;
-    /* Behind a hub the class never reports itself active; poll for it. */
-    if (!g_ready && HUBMIDI_Ready(&hUsbHostHS))
-    {
-        g_ready     = true;
-        g_need_init = true;
-        g_rx_cable  = -1;
-    }
-    if (g_ready && (g_usbh.IsActiveClass(USBH_MIDI_CLASS) || HUBMIDI_Ready(&hUsbHostHS)))
-        flush();
+    if (hUsbHostHS.device.DevDesc.idVendor == kNovation) g_diag.vid_ok = true;
+
+    bind();
+    flush();
+    xl::Flush_();
 }
 
-bool Connected() { return g_ready; }
+bool Connected() { return g_mini_link != kNone; }
 
 uint8_t Stage()
 {
-    if (g_ready) return 3;
+    if (g_mini_link != kNone || g_xl_link != kNone) return 3;
     if (hUsbHostHS.gState == HOST_ABORT_STATE) g_failed = true;
     if (via_hub())
-        return HUBMIDI_GetInfo().fail_state ? 2 : 1; /* a hub: working on it */
+        return HUBMIDI_GetInfo().fail_state && !HUBMIDI_Ready(&hUsbHostHS) ? 2 : 1;
     if (g_failed) return 2;
     return hUsbHostHS.device.is_connected ? 1 : 0;
 }
@@ -303,30 +355,22 @@ int Report(char* b, int cap)
     int n = 0;
 #define OUT(...) do { if (n < cap) n += snprintf(b + n, (size_t)(cap - n), __VA_ARGS__); } while (0)
     OUT("launchpad host report\n");
-    OUT("aborts %u, state before first abort %u, enum at first abort %u, vid_ok %d, ready %d\n",
+    OUT("aborts %u, state before first abort %u, enum at first abort %u, vid_ok %d\n",
         (unsigned)g_diag.aborts, (unsigned)g_diag.state_before_abort,
-        (unsigned)g_diag.enum_at_abort, (int)g_diag.vid_ok, (int)g_ready);
-    OUT("rx %lu tx %lu\n", (unsigned long)g_rx_count, (unsigned long)g_tx_count);
+        (unsigned)g_diag.enum_at_abort, (int)g_diag.vid_ok);
+    OUT("rx %lu tx %lu, mini link %d, xl link %d, direct %d\n", (unsigned long)g_rx_count,
+        (unsigned long)g_tx_count, g_mini_link, g_xl_link, (int)g_direct_ready);
     {
         const HUBMIDI_Info h = HUBMIDI_GetInfo();
-        OUT("hub: active %d state %u ports %u port %u status %04x behind %04x:%04x last fail state %u code %u skipped ports %04x\n",
-            (int)via_hub(), h.state, h.ports, h.port, h.port_status, h.vid, h.pid,
-            h.fail_state, h.fail_code, h.skipped);
+        OUT("hub: active %d state %u ports %u port %u status %04x last fail state %u code %u "
+            "skipped %04x done %04x\n",
+            (int)via_hub(), h.state, h.ports, h.port, h.port_status, h.fail_state, h.fail_code,
+            h.skipped, h.done);
+        for (int d = 0; d < HUBMIDI_MAX_DEVICES; d++)
+            OUT("  slot %d: port %u %04x:%04x\n", d, h.dev_port[d], h.dev_vid[d], h.dev_pid[d]);
     }
-    if (g_cc_seen)
-    {
-        OUT("at CHECK_CLASS: vid %04x pid %04x classes registered %lu\n",
-            g_cc_vid, g_cc_pid, (unsigned long)g_cc_classnum);
-        OUT("cfg total %u, interfaces %u, if0 class %u, if1 class %u sub %u eps %u\n",
-            g_cc_total, g_cc_nif, g_cc_if0c, g_cc_if1c, g_cc_if1s, g_cc_if1ep);
-        OUT("device.Data:");
-        for (int i = 0; i < 18; i++) OUT(" %02x", g_cc_dev[i]);
-        OUT("\nCfgDesc_Raw:");
-        for (int i = 0; i < 64; i++) OUT("%s%02x", (i % 16) ? " " : "\n  ", g_cc_cfg[i]);
-        OUT("\n");
-    }
-    else
-        OUT("CHECK_CLASS never reached\n");
+    OUT("direct device %04x:%04x\n", hUsbHostHS.device.DevDesc.idVendor,
+        hUsbHostHS.device.DevDesc.idProduct);
     OUT("trace (ms gState enumState):\n");
     for (int i = 0; i < g_tr_n; i++) OUT("  %lu %u %u\n", (unsigned long)g_tr[i].t, g_tr[i].gs, g_tr[i].es);
 #undef OUT
@@ -337,3 +381,233 @@ uint32_t RxCount() { return g_rx_count; }
 uint32_t TxCount() { return g_tx_count; }
 
 } // namespace lp
+
+namespace
+{
+
+void mini_bound()
+{
+    lp::g_need_init = true;
+    lp::g_rx_cable  = -1;
+}
+
+/* USB-MIDI event packets, 4 bytes each: [cable|CIN, status, data1, data2]. */
+void mini_rx(uint8_t* buf, size_t len)
+{
+    using namespace lp;
+    for (size_t i = 0; i + 3 < len; i += 4)
+    {
+        const uint8_t cin   = buf[i] & 0x0F;
+        const int     cable = buf[i] >> 4;
+        const uint8_t st    = buf[i + 1] & 0xF0;
+        const uint8_t d1    = buf[i + 2];
+        const uint8_t d2    = buf[i + 3];
+        if (cin != 0x8 && cin != 0x9 && cin != 0xB) continue; /* notes and CCs only */
+        if (g_rx_cable < 0) g_rx_cable = cable;
+        if (cable != g_rx_cable) continue; /* the same press may come on both */
+        const int row = d1 / 10, col = d1 % 10;
+        if (row < 1 || row > 9 || col < 1 || col > 9) continue;
+        const bool down = (st != 0x80) && d2 > 0;
+        if (row == 9)
+        {
+            if (col <= 8) push(Kind::Top, (uint8_t)(col - 1), 0, down);
+        }
+        else if (col == 9)
+            push(Kind::Side, 0, (uint8_t)(8 - row), down);
+        else
+            push(Kind::Grid, (uint8_t)(col - 1), (uint8_t)(8 - row), down);
+    }
+}
+
+} // namespace
+
+/* ============================================================== Launch Control XL */
+
+namespace xl
+{
+
+namespace
+{
+
+constexpr uint8_t kTemplate = 0x08; /* factory template 1 */
+constexpr int     kKnobs    = 24;
+constexpr int     kFaders   = 8;
+constexpr int     kLeds     = 40;   /* 24 knobs, then 2 rows of 8 buttons */
+constexpr uint8_t kUnknown  = 0xFF;
+
+bool     g_need_template = false;
+uint8_t  g_knob[kKnobs], g_fader[kFaders];
+uint32_t g_knob_changed = 0;
+uint8_t  g_fader_changed = 0;
+
+uint8_t g_want[kLeds], g_sent[kLeds];
+int     g_scan = 0;
+
+constexpr int kQueue = 32;
+Button        g_q[kQueue];
+int           g_qhead = 0, g_qtail = 0;
+
+/* A little SysEx reassembly: just enough to see "template changed". */
+uint8_t g_sx[16];
+int     g_sx_n = 0;
+
+void push(uint8_t row, uint8_t col, bool down)
+{
+    int next = (g_qhead + 1) % kQueue;
+    if (next == g_qtail) return;
+    g_q[g_qhead] = Button{row, col, down};
+    g_qhead      = next;
+}
+
+void sx_byte(uint8_t b)
+{
+    if (b == 0xF0) g_sx_n = 0;
+    if (g_sx_n < (int)sizeof g_sx) g_sx[g_sx_n++] = b;
+    if (b == 0xF7)
+    {
+        /* F0 00 20 29 02 11 77 tt F7: the template changed on the device. */
+        if (g_sx_n == 9 && g_sx[5] == 0x11 && g_sx[6] == 0x77 && g_sx[7] != kTemplate)
+            g_need_template = true;
+        g_sx_n = 0;
+    }
+}
+
+} // namespace
+
+bool Connected() { return g_xl_link != kNone; }
+
+bool Knob(uint8_t row, uint8_t col, uint8_t* v)
+{
+    const int i = row * 8 + col;
+    if (row > 2 || col > 7) return false;
+    *v = g_knob[i];
+    if (!(g_knob_changed & (1u << i))) return false;
+    g_knob_changed &= ~(1u << i);
+    return true;
+}
+
+bool Fader(uint8_t col, uint8_t* v)
+{
+    if (col > 7) return false;
+    *v = g_fader[col];
+    if (!(g_fader_changed & (1u << col))) return false;
+    g_fader_changed = (uint8_t)(g_fader_changed & ~(1u << col));
+    return true;
+}
+
+uint8_t KnobValue(uint8_t row, uint8_t col) { return (row < 3 && col < 8) ? g_knob[row * 8 + col] : 0; }
+uint8_t FaderValue(uint8_t col) { return col < 8 ? g_fader[col] : 0; }
+
+bool PopButton(Button* b)
+{
+    if (g_qtail == g_qhead) return false;
+    *b      = g_q[g_qtail];
+    g_qtail = (g_qtail + 1) % kQueue;
+    return true;
+}
+
+void SetKnobLed(uint8_t row, uint8_t col, uint8_t colour)
+{
+    if (row < 3 && col < 8) g_want[row * 8 + col] = colour;
+}
+
+void SetButtonLed(uint8_t row, uint8_t col, uint8_t colour)
+{
+    if (row < 2 && col < 8) g_want[24 + row * 8 + col] = colour;
+}
+
+/* Called from lp::Poll: template select first, then changed LEDs, one
+ * 64-byte transfer at most, never waiting. */
+void Flush_()
+{
+    const int link = g_xl_link;
+    if (link == kNone) return;
+    uint16_t ep = link_out_size(link);
+    if (ep < 16) return;
+    if (ep > sizeof g_tx_xl) ep = sizeof g_tx_xl;
+    const int max_pk = ep / 4;
+
+    if (g_need_template)
+    {
+        const uint8_t sx[9] = {0xF0, 0x00, 0x20, 0x29, 0x02, 0x11, 0x77, kTemplate, 0xF7};
+        const int     n     = sysex_packets(sx, 9, 0, g_tx_xl);
+        if (link_send(link, g_tx_xl, (uint16_t)(4 * n)))
+        {
+            g_need_template = false;
+            for (int i = 0; i < kLeds; i++) g_sent[i] = kUnknown;
+        }
+        return;
+    }
+
+    /* Each LED is its own SysEx (F0 00 20 29 02 11 78 tt idx val F7, 11 bytes
+     * = 4 packets), so four LEDs per transfer. */
+    int n = 0, sent_idx[4], sent_n = 0;
+    for (int k = 0; k < kLeds && n + 4 <= max_pk && sent_n < 4; k++)
+    {
+        const int i = (g_scan + k) % kLeds;
+        if (g_want[i] == g_sent[i]) continue;
+        const uint8_t sx[11] = {0xF0, 0x00, 0x20, 0x29, 0x02, 0x11, 0x78, kTemplate,
+                                (uint8_t)i, g_want[i], 0xF7};
+        n += sysex_packets(sx, 11, 0, &g_tx_xl[4 * n]);
+        sent_idx[sent_n++] = i;
+    }
+    if (n == 0) return;
+    if (!link_send(link, g_tx_xl, (uint16_t)(4 * n))) return;
+    for (int j = 0; j < sent_n; j++) g_sent[sent_idx[j]] = g_want[sent_idx[j]];
+    g_scan = (sent_idx[sent_n - 1] + 1) % kLeds;
+}
+
+} // namespace xl
+
+namespace
+{
+
+void xl_bound()
+{
+    xl::g_need_template = true;
+    for (int i = 0; i < xl::kLeds; i++) xl::g_sent[i] = xl::kUnknown;
+}
+
+void xl_rx(uint8_t* buf, size_t len)
+{
+    using namespace xl;
+    for (size_t i = 0; i + 3 < len; i += 4)
+    {
+        const uint8_t cin = buf[i] & 0x0F;
+        const uint8_t st  = buf[i + 1] & 0xF0;
+        const uint8_t d1  = buf[i + 2], d2 = buf[i + 3];
+        if (cin >= 0x4 && cin <= 0x7)
+        {
+            const int nb = (cin == 0x5) ? 1 : (cin == 0x6) ? 2 : 3;
+            for (int k = 0; k < nb; k++) sx_byte(buf[i + 1 + k]);
+            continue;
+        }
+        if (cin == 0xB && st == 0xB0)
+        {
+            int k = -1;
+            if (d1 >= 13 && d1 <= 20)      k = d1 - 13;
+            else if (d1 >= 29 && d1 <= 36) k = 8 + d1 - 29;
+            else if (d1 >= 49 && d1 <= 56) k = 16 + d1 - 49;
+            if (k >= 0)
+            {
+                g_knob[k] = d2;
+                g_knob_changed |= 1u << k;
+            }
+            else if (d1 >= 77 && d1 <= 84)
+            {
+                g_fader[d1 - 77] = d2;
+                g_fader_changed  = (uint8_t)(g_fader_changed | (1u << (d1 - 77)));
+            }
+        }
+        else if (cin == 0x8 || cin == 0x9)
+        {
+            const bool down = (st == 0x90) && d2 > 0;
+            if (d1 >= 41 && d1 <= 44)      push(0, (uint8_t)(d1 - 41), down);
+            else if (d1 >= 57 && d1 <= 60) push(0, (uint8_t)(4 + d1 - 57), down);
+            else if (d1 >= 73 && d1 <= 76) push(1, (uint8_t)(d1 - 73), down);
+            else if (d1 >= 89 && d1 <= 92) push(1, (uint8_t)(4 + d1 - 89), down);
+        }
+    }
+}
+
+} // namespace

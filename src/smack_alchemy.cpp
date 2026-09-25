@@ -561,6 +561,85 @@ static void lp_poll(uint32_t now)
     }
 }
 
+/* ---- Launch Control XL -----------------------------------------------------
+ *
+ *   faders 1-6    the PLAY knobs: FX, ORDER, LENGTH, SLICE, BLEND, DJ FILTER
+ *   top knobs 1-6 the SETUP knobs: SEED, PITCH RANGE, CLOCK RATIO, PUNCH FX,
+ *                 MODE, TEMPO (their stored values: the pots catch)
+ *   upper row     1 CAPTURE, 2 RE-ROLL, 3 LIVE, 4 CLEAR (hold 1 s)
+ *   lower row     hold to punch effects 1-8 (Retrig .. Repeat)
+ */
+static void mark_dirty(uint32_t now);
+static bool     g_xl_clear_down = false, g_xl_clear_fired = false;
+static uint32_t g_xl_clear_t0   = 0;
+
+static void xl_frame(uint32_t now)
+{
+    if (!xl::Connected()) return;
+    const float* phys = loop.Phys();
+    uint8_t v;
+    for (uint8_t c = 0; c < 6; c++)
+    {
+        if (xl::Fader(c, &v))
+        {
+            pager.SetStored(kPagePlay, c, (float)v / 127.0f, phys);
+            mark_dirty(now);
+        }
+        if (xl::Knob(0, c, &v))
+        {
+            pager.SetStored(kPageSetup, c, (float)v / 127.0f, phys);
+            mark_dirty(now);
+        }
+    }
+
+    xl::Button b;
+    const bool live = !settings.IsActive();
+    while (xl::PopButton(&b))
+    {
+        if (!live) continue;
+        if (b.row == 1)
+        {
+            const int fx = 1 + b.col; /* effects 1..8 */
+            if (b.down) g_lp_punch = fx;
+            else if (g_lp_punch == fx) g_lp_punch = -1;
+            continue;
+        }
+        if (b.col == 3)
+        {
+            if (b.down) { g_xl_clear_down = true; g_xl_clear_fired = false; g_xl_clear_t0 = now; }
+            else g_xl_clear_down = false;
+            continue;
+        }
+        if (!b.down) continue;
+        if (b.col == 0)
+        {
+            smack_set_param(S, "capture", "1");
+            if (!clk_locked(&CLK)) smack_set_param(S, "detect_bpm", "1");
+        }
+        else if (b.col == 1) smack_set_param(S, "reroll", "1");
+        else if (b.col == 2) G_LIVE = !G_LIVE;
+    }
+    if (g_xl_clear_down && !g_xl_clear_fired && now - g_xl_clear_t0 > 1000u)
+    {
+        smack_set_param(S, "clear", "1");
+        g_xl_clear_fired = true;
+    }
+
+    for (uint8_t c = 0; c < 8; c++)
+    {
+        uint8_t up = xl::kOff;
+        if (c == 0) up = G_RUN_STATE == 2 ? xl::kRed : (G_RUN_STATE == 1 ? xl::kAmber : xl::kRedDim);
+        if (c == 1) up = xl::kAmberDim;
+        if (c == 2) up = G_LIVE ? xl::kGreen : xl::kGreenDim;
+        if (c == 3) up = g_xl_clear_down ? xl::kRed : xl::kRedDim;
+        xl::SetButtonLed(0, c, up);
+        xl::SetButtonLed(1, c, g_lp_punch == 1 + c ? xl::kGreen : xl::kAmberDim);
+        xl::SetKnobLed(0, c, c < 6 ? xl::kAmberDim : xl::kOff);
+        xl::SetKnobLed(1, c, xl::kOff);
+        xl::SetKnobLed(2, c, xl::kOff);
+    }
+}
+
 static void lp_paint(void)
 {
     if (!lp::Connected()) return;
@@ -866,7 +945,7 @@ static void OnFrame(void)
      * poll is paused for the duration. The epsilons above are the wear
      * limiter; this is a ceiling on write frequency, not a write rate.
      */
-    if (g_lp_mode) { lp_paint(); lp_write_report(now); }
+    if (g_lp_mode) { lp_paint(); xl_frame(now); lp_write_report(now); }
 
     /* The USB port only takes effect at power-up, so a change is saved as
      * soon as Settings closes -- nobody should have to wait before cycling. */

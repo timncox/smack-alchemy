@@ -28,6 +28,7 @@
 #define PS_RESET              0x0010U
 #define PS_LOW_SPEED          0x0200U
 
+/* Enumeration / port-management states (numbers appear in /lpdiag.txt). */
 enum
 {
     S_HUB_DESC = 1,
@@ -47,41 +48,56 @@ enum
     S_DEV_CFG9,
     S_DEV_CFG_FULL,
     S_DEV_SET_CFG,
-    S_RX,
-    S_RX_POLL,
+    S_UNUSED18,
+    S_UNUSED19,
     S_FAILED,
-    S_REJECT,     /* the device is not MIDI: switch its port off, scan on */
+    S_REJECT, /* the device is not MIDI: switch its port off, scan on */
+    S_FULL,   /* every device slot taken: nothing more to scan for */
 };
+
+/* Per-device receive loop. */
+enum { RX_ARM = 0, RX_POLL = 1 };
+
+typedef struct
+{
+    uint8_t  ready;
+    uint8_t  port, addr;
+    uint8_t  in_ep, out_ep, in_pipe, out_pipe;
+    uint16_t in_size, out_size;
+    uint8_t  rx;
+    uint16_t vid, pid;
+} Dev;
 
 typedef struct
 {
     uint8_t  state;
     uint8_t  ports;
     uint16_t pwr_wait_ms;
-    uint8_t  port;      /* port being scanned / used, 1-based */
-    uint16_t skip;      /* ports whose device was not MIDI (bit n = port n) */
-    uint8_t  dev_addr;  /* address for the device being enumerated */
-    uint8_t  hub_mps;   /* the hub's control max packet size */
-    uint8_t  rejects;
+    uint8_t  port;      /* port being scanned / enumerated, 1-based */
     uint32_t t0;
     uint16_t port_status, port_change;
-    uint8_t  dev_mps0;
-    uint16_t cfg_total;
-    uint8_t  cfg_value;
-    uint8_t  in_ep, out_ep, in_pipe, out_pipe;
-    uint16_t in_size, out_size;
-    uint8_t  ready;
-    uint16_t vid, pid;
+    uint16_t skip;      /* ports whose device was not MIDI (bit n = port n) */
+    uint16_t done;      /* ports carrying a configured device */
+    uint8_t  next_addr; /* address for the next device enumerated */
+    uint8_t  hub_mps;   /* the hub's control max packet size */
+    uint8_t  ctl_addr;  /* where the control pipes point now */
+    uint8_t  rejects;
+    /* the device being enumerated */
+    uint8_t  e_addr, e_mps0, e_cfg_value;
+    uint16_t e_cfg_total, e_vid, e_pid;
+    uint8_t  e_in_ep, e_out_ep;
+    uint16_t e_in_size, e_out_size;
     uint8_t  fail_state, fail_code;
+    Dev      dev[HUBMIDI_MAX_DEVICES];
 } HubMidi;
 
 static HubMidi            H;
 static HUBMIDI_RxCallback s_cb;
 static void              *s_user;
 
-/* Control-transfer data and the MIDI receive buffer: DMA-reachable. */
+/* Control-transfer data and the MIDI receive buffers: DMA-reachable. */
 static uint8_t DMA_SECTION s_ctl[512];
-static uint8_t DMA_SECTION s_rx[64];
+static uint8_t DMA_SECTION s_rx[HUBMIDI_MAX_DEVICES][64];
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -99,13 +115,18 @@ static USBH_StatusTypeDef ctl(USBH_HandleTypeDef *ph, uint8_t type, uint8_t req,
     return USBH_CtlReq(ph, buf, len);
 }
 
-/* Point the core's control pipes at another device address. */
-static void ctl_target(USBH_HandleTypeDef *ph, uint8_t addr, uint8_t mps)
+/* Point the core's control pipes at an address -- only between requests. */
+static void ctl_to(USBH_HandleTypeDef *ph, uint8_t addr, uint8_t mps)
 {
+    if (ph->RequestState != CMD_SEND) return;
+    if (H.ctl_addr == addr && ph->Control.pipe_size == mps) return;
+    H.ctl_addr            = addr;
     ph->Control.pipe_size = mps;
     USBH_OpenPipe(ph, ph->Control.pipe_in, 0x80U, addr, ph->device.speed, USBH_EP_CONTROL, mps);
     USBH_OpenPipe(ph, ph->Control.pipe_out, 0x00U, addr, ph->device.speed, USBH_EP_CONTROL, mps);
 }
+
+static void to_hub(USBH_HandleTypeDef *ph) { ctl_to(ph, USBH_DEVICE_ADDRESS, H.hub_mps); }
 
 static void fail(USBH_StatusTypeDef st)
 {
@@ -131,32 +152,75 @@ static int step(USBH_StatusTypeDef st, uint8_t next)
 
 static uint16_t le16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 
+static int free_slot(void)
+{
+    for (int i = 0; i < HUBMIDI_MAX_DEVICES; i++)
+        if (!H.dev[i].ready) return i;
+    return -1;
+}
+
 /* Find the first MIDI-streaming interface's bulk endpoints. */
 static int parse_cfg(const uint8_t *c, uint16_t total)
 {
     uint16_t i    = 0;
     int      midi = 0;
-    H.in_ep = H.out_ep = 0;
+    H.e_in_ep = H.e_out_ep = 0;
     while (i + 2 <= total)
     {
         const uint8_t len = c[i], type = c[i + 1];
         if (len < 2 || i + len > total) break;
         if (type == 0x04 && len >= 9) /* interface */
         {
-            if (midi && H.in_ep && H.out_ep) break;
+            if (midi && H.e_in_ep && H.e_out_ep) break;
             midi = (c[i + 5] == 0x01 && c[i + 6] == 0x03);
         }
         else if (type == 0x05 && len >= 7 && midi && (c[i + 3] & 0x03) == 0x02)
         {
             const uint8_t  ep  = c[i + 2];
             const uint16_t mps = le16(&c[i + 4]) & 0x03FFU;
-            if (ep & 0x80U) { if (!H.in_ep)  { H.in_ep = ep;  H.in_size = mps; } }
-            else            { if (!H.out_ep) { H.out_ep = ep; H.out_size = mps; } }
+            if (ep & 0x80U) { if (!H.e_in_ep)  { H.e_in_ep = ep;  H.e_in_size = mps; } }
+            else            { if (!H.e_out_ep) { H.e_out_ep = ep; H.e_out_size = mps; } }
         }
         i = (uint16_t)(i + len);
     }
-    if (H.in_size > sizeof s_rx) H.in_size = sizeof s_rx;
-    return H.in_ep && H.out_ep;
+    if (H.e_in_size > sizeof s_rx[0]) H.e_in_size = sizeof s_rx[0];
+    return H.e_in_ep && H.e_out_ep;
+}
+
+/* On to the next port; after the last, wait and go round again. */
+static void next_port(uint32_t now)
+{
+    if (++H.port > H.ports)
+    {
+        H.port  = 1;
+        H.t0    = now;
+        H.state = S_SCAN_WAIT;
+    }
+    else
+        H.state = S_SCAN;
+}
+
+/* ---------------------------------------------------------------- per-device RX */
+
+static void rx_step(USBH_HandleTypeDef *ph, int i)
+{
+    Dev *d = &H.dev[i];
+    if (!d->ready) return;
+    if (d->rx == RX_ARM)
+    {
+        USBH_BulkReceiveData(ph, s_rx[i], d->in_size, d->in_pipe);
+        d->rx = RX_POLL;
+        return;
+    }
+    const USBH_URBStateTypeDef u = USBH_LL_GetURBState(ph, d->in_pipe);
+    if (u == USBH_URB_DONE)
+    {
+        const uint32_t n = USBH_LL_GetLastXferSize(ph, d->in_pipe);
+        d->rx = RX_ARM;
+        if (s_cb) s_cb((uint8_t)i, s_rx[i], n, s_user);
+    }
+    else if (u == USBH_URB_ERROR || u == USBH_URB_STALL)
+        d->rx = RX_ARM; /* re-arm; an unplug surfaces as a disconnect */
 }
 
 /* ---------------------------------------------------------------- class */
@@ -164,19 +228,23 @@ static int parse_cfg(const uint8_t *c, uint16_t total)
 static USBH_StatusTypeDef Init(USBH_HandleTypeDef *ph)
 {
     memset(&H, 0, sizeof H);
-    H.state                   = S_HUB_DESC;
-    H.hub_mps                 = (uint8_t)ph->Control.pipe_size;
-    H.dev_addr                = DEV_ADDR0;
-    ph->pActiveClass->pData   = &H;
+    H.state                 = S_HUB_DESC;
+    H.hub_mps               = (uint8_t)ph->Control.pipe_size;
+    H.ctl_addr              = USBH_DEVICE_ADDRESS;
+    H.next_addr             = DEV_ADDR0;
+    ph->pActiveClass->pData = &H;
     return USBH_OK;
 }
 
 static USBH_StatusTypeDef DeInit(USBH_HandleTypeDef *ph)
 {
-    if (H.in_pipe)  { USBH_ClosePipe(ph, H.in_pipe);  USBH_FreePipe(ph, H.in_pipe);  }
-    if (H.out_pipe) { USBH_ClosePipe(ph, H.out_pipe); USBH_FreePipe(ph, H.out_pipe); }
-    H.in_pipe = H.out_pipe = 0;
-    H.ready   = 0;
+    for (int i = 0; i < HUBMIDI_MAX_DEVICES; i++)
+    {
+        Dev *d = &H.dev[i];
+        if (d->in_pipe)  { USBH_ClosePipe(ph, d->in_pipe);  USBH_FreePipe(ph, d->in_pipe);  }
+        if (d->out_pipe) { USBH_ClosePipe(ph, d->out_pipe); USBH_FreePipe(ph, d->out_pipe); }
+        memset(d, 0, sizeof *d);
+    }
     if (ph->pActiveClass) ph->pActiveClass->pData = 0;
     return USBH_OK;
 }
@@ -187,12 +255,12 @@ static USBH_StatusTypeDef Requests(USBH_HandleTypeDef *ph)
     return USBH_OK; /* all the work is in the background process */
 }
 
-static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
+static void enum_step(USBH_HandleTypeDef *ph, uint32_t now)
 {
-    const uint32_t now = HAL_GetTick();
     switch (H.state)
     {
         case S_HUB_DESC:
+            to_hub(ph);
             if (step(ctl(ph, USB_D2H | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_DEVICE,
                          USB_REQ_GET_DESCRIPTOR, (uint16_t)(HUB_DESC_TYPE << 8), 0, s_ctl, 9),
                      S_POWER))
@@ -205,6 +273,7 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
             break;
 
         case S_POWER:
+            to_hub(ph);
             if (step(ctl(ph, USB_H2D | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
                          HUB_REQ_SET_FEATURE, PORT_POWER, H.port, 0, 0),
                      S_POWER))
@@ -223,37 +292,42 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
             break;
 
         case S_SCAN:
+            if (free_slot() < 0) { H.state = S_FULL; break; }
+            if ((H.skip | H.done) & (1U << H.port)) { next_port(now); break; }
+            to_hub(ph);
             if (step(ctl(ph, USB_D2H | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
                          HUB_REQ_GET_STATUS, 0, H.port, s_ctl, 4),
                      S_SCAN))
             {
                 H.port_status = le16(&s_ctl[0]);
                 H.port_change = le16(&s_ctl[2]);
-                if ((H.port_status & PS_CONNECTION) && !(H.skip & (1U << H.port)))
+                if (!(H.port_status & PS_CONNECTION))
+                    next_port(now);
+                else if (H.port_status & PS_LOW_SPEED)
                 {
-                    if (H.port_status & PS_LOW_SPEED) { fail(USBH_NOT_SUPPORTED); break; }
+                    H.skip |= (uint16_t)(1U << H.port); /* would need PRE packets */
+                    next_port(now);
+                }
+                else
                     H.state = S_CLR_C_CONN;
-                }
-                else if (++H.port > H.ports)
-                {
-                    H.port  = 1;
-                    H.t0    = now;
-                    H.state = S_SCAN_WAIT;
-                }
             }
             break;
 
         case S_SCAN_WAIT:
-            if (now - H.t0 >= 100U) H.state = S_SCAN;
+            /* Free ports are looked at again twice a second, so a controller
+             * plugged in later is picked up. */
+            if (now - H.t0 >= 500U) H.state = S_SCAN;
             break;
 
         case S_CLR_C_CONN:
+            to_hub(ph);
             step(ctl(ph, USB_H2D | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
                      HUB_REQ_CLEAR_FEATURE, C_PORT_CONNECTION, H.port, 0, 0),
                  S_RESET);
             break;
 
         case S_RESET:
+            to_hub(ph);
             if (step(ctl(ph, USB_H2D | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
                          HUB_REQ_SET_FEATURE, PORT_RESET, H.port, 0, 0),
                      S_RESET_POLL))
@@ -262,6 +336,7 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
 
         case S_RESET_POLL:
             if (now - H.t0 < 20U) break; /* the reset lasts 10-20 ms */
+            to_hub(ph);
             if (step(ctl(ph, USB_D2H | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
                          HUB_REQ_GET_STATUS, 0, H.port, s_ctl, 4),
                      S_RESET_POLL))
@@ -271,13 +346,17 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
                 if (!(H.port_status & PS_RESET) && (H.port_status & PS_ENABLE))
                     H.state = S_CLR_C_RESET;
                 else if (now - H.t0 > 500U)
+                {
+                    H.state = S_DEV_DESC8; /* so fail() rejects the port, not the hub */
                     fail(USBH_FAIL);
+                }
                 else
                     H.t0 = now - 10U; /* poll again in 10 ms */
             }
             break;
 
         case S_CLR_C_RESET:
+            to_hub(ph);
             if (step(ctl(ph, USB_H2D | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
                          HUB_REQ_CLEAR_FEATURE, C_PORT_RESET, H.port, 0, 0),
                      S_RECOVERY))
@@ -285,130 +364,128 @@ static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
             break;
 
         case S_RECOVERY:
-            /* Reset recovery, then talk to the new device at address 0. */
+            /* Reset recovery; the new device answers at address 0. */
             if (now - H.t0 >= 20U)
             {
-                ctl_target(ph, 0, 8);
-                H.state = S_DEV_DESC8;
+                H.e_addr = H.next_addr;
+                H.state  = S_DEV_DESC8;
             }
             break;
 
         case S_DEV_DESC8:
+            ctl_to(ph, 0, 8);
             if (step(USBH_GetDescriptor(ph, USB_REQ_RECIPIENT_DEVICE | USB_REQ_TYPE_STANDARD,
                                         USB_DESC_DEVICE, s_ctl, 8),
                      S_DEV_ADDR))
-            {
-                H.dev_mps0 = s_ctl[7] ? s_ctl[7] : 8;
-                ctl_target(ph, 0, H.dev_mps0);
-            }
+                H.e_mps0 = s_ctl[7] ? s_ctl[7] : 8;
             break;
 
         case S_DEV_ADDR:
-            if (step(USBH_SetAddress(ph, H.dev_addr), S_DEV_ADDR_WAIT)) H.t0 = now;
+            ctl_to(ph, 0, H.e_mps0);
+            if (step(USBH_SetAddress(ph, H.e_addr), S_DEV_ADDR_WAIT)) H.t0 = now;
             break;
 
         case S_DEV_ADDR_WAIT:
-            if (now - H.t0 >= 5U)
-            {
-                ctl_target(ph, H.dev_addr, H.dev_mps0);
-                H.state = S_DEV_DESC18;
-            }
+            if (now - H.t0 >= 5U) H.state = S_DEV_DESC18;
             break;
 
         case S_DEV_DESC18:
+            ctl_to(ph, H.e_addr, H.e_mps0);
             if (step(USBH_GetDescriptor(ph, USB_REQ_RECIPIENT_DEVICE | USB_REQ_TYPE_STANDARD,
                                         USB_DESC_DEVICE, s_ctl, 18),
                      S_DEV_CFG9))
             {
-                H.vid = le16(&s_ctl[8]);
-                H.pid = le16(&s_ctl[10]);
+                H.e_vid = le16(&s_ctl[8]);
+                H.e_pid = le16(&s_ctl[10]);
             }
             break;
 
         case S_DEV_CFG9:
+            ctl_to(ph, H.e_addr, H.e_mps0);
             if (step(USBH_GetDescriptor(ph, USB_REQ_RECIPIENT_DEVICE | USB_REQ_TYPE_STANDARD,
                                         USB_DESC_CONFIGURATION, s_ctl, 9),
                      S_DEV_CFG_FULL))
             {
-                H.cfg_total = le16(&s_ctl[2]);
-                H.cfg_value = s_ctl[5];
-                if (H.cfg_total > sizeof s_ctl) H.cfg_total = sizeof s_ctl;
+                H.e_cfg_total = le16(&s_ctl[2]);
+                H.e_cfg_value = s_ctl[5];
+                if (H.e_cfg_total > sizeof s_ctl) H.e_cfg_total = sizeof s_ctl;
             }
             break;
 
         case S_DEV_CFG_FULL:
+            ctl_to(ph, H.e_addr, H.e_mps0);
             if (step(USBH_GetDescriptor(ph, USB_REQ_RECIPIENT_DEVICE | USB_REQ_TYPE_STANDARD,
-                                        USB_DESC_CONFIGURATION, s_ctl, H.cfg_total),
+                                        USB_DESC_CONFIGURATION, s_ctl, H.e_cfg_total),
                      S_DEV_SET_CFG))
             {
-                if (!parse_cfg(s_ctl, H.cfg_total)) fail(USBH_NOT_SUPPORTED);
+                if (!parse_cfg(s_ctl, H.e_cfg_total))
+                {
+                    H.state = S_DEV_CFG_FULL; /* so fail() rejects the port */
+                    fail(USBH_NOT_SUPPORTED);
+                }
             }
             break;
 
         case S_DEV_SET_CFG:
-            if (step(USBH_SetCfg(ph, H.cfg_value), S_RX))
-            {
-                H.in_pipe = USBH_AllocPipe(ph, H.in_ep);
-                USBH_OpenPipe(ph, H.in_pipe, H.in_ep, H.dev_addr, ph->device.speed,
-                              USBH_EP_BULK, H.in_size);
-                USBH_LL_SetToggle(ph, H.in_pipe, 0U);
-                H.out_pipe = USBH_AllocPipe(ph, H.out_ep);
-                USBH_OpenPipe(ph, H.out_pipe, H.out_ep, H.dev_addr, ph->device.speed,
-                              USBH_EP_BULK, H.out_size);
-                USBH_LL_SetToggle(ph, H.out_pipe, 0U);
-                H.ready = 1;
-            }
-            break;
-
-        case S_RX:
-            USBH_BulkReceiveData(ph, s_rx, H.in_size, H.in_pipe);
-            H.state = S_RX_POLL;
-            break;
-
-        case S_RX_POLL:
         {
-            const USBH_URBStateTypeDef u = USBH_LL_GetURBState(ph, H.in_pipe);
-            if (u == USBH_URB_DONE)
+            const int slot = free_slot();
+            if (slot < 0) { H.state = S_FULL; break; }
+            ctl_to(ph, H.e_addr, H.e_mps0);
+            if (step(USBH_SetCfg(ph, H.e_cfg_value), S_SCAN))
             {
-                const uint32_t n = USBH_LL_GetLastXferSize(ph, H.in_pipe);
-                H.state = S_RX;
-                if (s_cb) s_cb(s_rx, n, s_user);
-            }
-            else if (u == USBH_URB_ERROR || u == USBH_URB_STALL)
-            {
-                H.state = S_RX; /* re-arm; an unplug will surface as a disconnect */
+                Dev *d      = &H.dev[slot];
+                memset(d, 0, sizeof *d);
+                d->port     = H.port;
+                d->addr     = H.e_addr;
+                d->vid      = H.e_vid;
+                d->pid      = H.e_pid;
+                d->in_ep    = H.e_in_ep;
+                d->out_ep   = H.e_out_ep;
+                d->in_size  = H.e_in_size;
+                d->out_size = H.e_out_size;
+                d->in_pipe  = USBH_AllocPipe(ph, d->in_ep);
+                USBH_OpenPipe(ph, d->in_pipe, d->in_ep, d->addr, ph->device.speed,
+                              USBH_EP_BULK, d->in_size);
+                USBH_LL_SetToggle(ph, d->in_pipe, 0U);
+                d->out_pipe = USBH_AllocPipe(ph, d->out_ep);
+                USBH_OpenPipe(ph, d->out_pipe, d->out_ep, d->addr, ph->device.speed,
+                              USBH_EP_BULK, d->out_size);
+                USBH_LL_SetToggle(ph, d->out_pipe, 0U);
+                d->rx       = RX_ARM;
+                d->ready    = 1;
+                H.done     |= (uint16_t)(1U << H.port);
+                H.next_addr = (uint8_t)(H.next_addr + 1U);
+                next_port(now); /* scan on for a second controller */
             }
             break;
         }
 
         case S_REJECT:
+        {
             /* Back to the hub, turn the port off, never pick it again. A
              * fresh address for the next device, so nothing stale answers. */
-            if (ph->RequestState == CMD_SEND) /* before each new request */
-                ctl_target(ph, USBH_DEVICE_ADDRESS, H.hub_mps);
-            if (step(ctl(ph, USB_H2D | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
-                         HUB_REQ_CLEAR_FEATURE, PORT_ENABLE, H.port, 0, 0),
-                     S_SCAN))
-            {
-                H.skip |= (uint16_t)(1U << H.port);
-                H.rejects++;
-                H.dev_addr = (uint8_t)(H.dev_addr + 1U);
-                H.port     = 1;
-            }
-            else if (H.state == S_FAILED)
-            {
-                /* The hub itself would not answer: give up on this port
-                 * anyway rather than the whole hub. */
-                H.skip |= (uint16_t)(1U << H.port);
-                H.rejects++;
-                H.dev_addr = (uint8_t)(H.dev_addr + 1U);
-                H.port     = 1;
-                H.state    = S_SCAN;
-            }
+            to_hub(ph);
+            const USBH_StatusTypeDef st =
+                ctl(ph, USB_H2D | USB_REQ_TYPE_CLASS | USB_REQ_RECIPIENT_OTHER,
+                    HUB_REQ_CLEAR_FEATURE, PORT_ENABLE, H.port, 0, 0);
+            if (st == USBH_BUSY) break;
+            /* done, or the hub would not answer: give up the port either way */
+            H.skip     |= (uint16_t)(1U << H.port);
+            H.rejects++;
+            H.next_addr = (uint8_t)(H.next_addr + 1U);
+            next_port(now);
             break;
+        }
 
-        default: break;
+        default: break; /* S_FAILED, S_FULL */
     }
+}
+
+static USBH_StatusTypeDef Process(USBH_HandleTypeDef *ph)
+{
+    const uint32_t now = HAL_GetTick();
+    enum_step(ph, now);
+    for (int i = 0; i < HUBMIDI_MAX_DEVICES; i++) rx_step(ph, i);
     return USBH_OK;
 }
 
@@ -424,25 +501,43 @@ USBH_ClassTypeDef USBH_hub_midi = {
 
 /* ---------------------------------------------------------------- API */
 
+static int active(USBH_HandleTypeDef *ph) { return ph->pActiveClass == &USBH_hub_midi; }
+
 uint8_t HUBMIDI_Ready(USBH_HandleTypeDef *ph)
 {
-    return ph->pActiveClass == &USBH_hub_midi && H.ready;
+    if (!active(ph)) return 0;
+    for (int i = 0; i < HUBMIDI_MAX_DEVICES; i++)
+        if (H.dev[i].ready) return 1;
+    return 0;
 }
 
-uint16_t HUBMIDI_OutSize(USBH_HandleTypeDef *ph)
+uint8_t HUBMIDI_DevReady(USBH_HandleTypeDef *ph, uint8_t dev)
 {
-    (void)ph;
-    return H.ready ? H.out_size : 0;
+    return active(ph) && dev < HUBMIDI_MAX_DEVICES && H.dev[dev].ready;
 }
 
-USBH_StatusTypeDef HUBMIDI_Transmit(USBH_HandleTypeDef *ph, uint8_t *data, uint16_t len)
+void HUBMIDI_DevId(uint8_t dev, uint16_t *vid, uint16_t *pid)
 {
-    if (!HUBMIDI_Ready(ph)) return USBH_FAIL;
-    const USBH_URBStateTypeDef u = USBH_LL_GetURBState(ph, H.out_pipe);
+    if (dev >= HUBMIDI_MAX_DEVICES) { *vid = *pid = 0; return; }
+    *vid = H.dev[dev].vid;
+    *pid = H.dev[dev].pid;
+}
+
+uint16_t HUBMIDI_OutSize(USBH_HandleTypeDef *ph, uint8_t dev)
+{
+    return HUBMIDI_DevReady(ph, dev) ? H.dev[dev].out_size : 0;
+}
+
+USBH_StatusTypeDef HUBMIDI_Transmit(USBH_HandleTypeDef *ph, uint8_t dev, uint8_t *data,
+                                    uint16_t len)
+{
+    if (!HUBMIDI_DevReady(ph, dev)) return USBH_FAIL;
+    const Dev                 *d = &H.dev[dev];
+    const USBH_URBStateTypeDef u = USBH_LL_GetURBState(ph, d->out_pipe);
     if (u != USBH_URB_IDLE && u != USBH_URB_DONE)
         return USBH_BUSY; /* in flight, or halted: never send into a halted pipe */
-    if (len > H.out_size) len = H.out_size;
-    USBH_BulkSendData(ph, data, len, H.out_pipe, 1U);
+    if (len > d->out_size) len = d->out_size;
+    USBH_BulkSendData(ph, data, len, d->out_pipe, 1U);
     return USBH_OK;
 }
 
@@ -455,14 +550,20 @@ void HUBMIDI_SetReceiveCallback(HUBMIDI_RxCallback cb, void *user)
 HUBMIDI_Info HUBMIDI_GetInfo(void)
 {
     HUBMIDI_Info i;
+    memset(&i, 0, sizeof i);
     i.state       = H.state;
     i.ports       = H.ports;
     i.port        = H.port;
     i.port_status = H.port_status;
-    i.vid         = H.vid;
-    i.pid         = H.pid;
     i.fail_state  = H.fail_state;
     i.fail_code   = H.fail_code;
     i.skipped     = H.skip;
+    i.done        = H.done;
+    for (int d = 0; d < HUBMIDI_MAX_DEVICES; d++)
+    {
+        i.dev_vid[d]  = H.dev[d].vid;
+        i.dev_pid[d]  = H.dev[d].pid;
+        i.dev_port[d] = H.dev[d].ready ? H.dev[d].port : 0;
+    }
     return i;
 }

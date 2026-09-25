@@ -8,7 +8,9 @@
  * bus-powered controller gets 5 V.
  *
  * Scope, on purpose:
- *   - one hub level, the first MIDI-streaming device found on its ports;
+ *   - one hub level, up to HUBMIDI_MAX_DEVICES MIDI-streaming devices on its
+ *     ports; free ports are rescanned every 500 ms, so one can be plugged in
+ *     later;
  *   - full-speed only. The Lab's host port runs at full speed, so a USB 2.0
  *     hub runs its upstream at full speed and passes full-speed packets
  *     through unchanged: no split transactions. Low-speed devices (which
@@ -17,7 +19,7 @@
  *     it get addresses 2, 3, ... here. A device that is not MIDI (many
  *     dongles carry an Ethernet chip on a port, e.g. Realtek 0bda:8153) or
  *     will not enumerate has its port switched off and is skipped.
- *     After the MIDI device is configured the hub is not polled again; an unplug surfaces as transfer errors / a host reset.
+ *     Configured ports are not polled again; an unplug surfaces as transfer errors / a host reset.
  *
  * It registers as the class for bInterfaceClass 0x09, enumerates the device
  * behind the hub itself with standard control requests (re-pointing the
@@ -36,29 +38,38 @@ extern "C" {
 extern USBH_ClassTypeDef USBH_hub_midi;
 #define USBH_HUB_MIDI_CLASS (&USBH_hub_midi)
 
-typedef void (*HUBMIDI_RxCallback)(uint8_t *buf, size_t len, void *user);
+/* Controllers served at once (e.g. a Launchpad Mini and a Launch Control). */
+#define HUBMIDI_MAX_DEVICES 2
 
-/* 1 once the device behind the hub is configured and its pipes are open. */
+typedef void (*HUBMIDI_RxCallback)(uint8_t dev, uint8_t *buf, size_t len, void *user);
+
+/* 1 once any device behind the hub is configured. */
 uint8_t HUBMIDI_Ready(USBH_HandleTypeDef *phost);
+/* Per device slot 0..HUBMIDI_MAX_DEVICES-1. */
+uint8_t HUBMIDI_DevReady(USBH_HandleTypeDef *phost, uint8_t dev);
+void    HUBMIDI_DevId(uint8_t dev, uint16_t *vid, uint16_t *pid);
 
-/* Non-blocking: USBH_BUSY while the previous transfer is in flight, USBH_OK
- * when queued, USBH_FAIL when not ready. len <= HUBMIDI_OutSize(). */
-USBH_StatusTypeDef HUBMIDI_Transmit(USBH_HandleTypeDef *phost, uint8_t *data, uint16_t len);
-uint16_t HUBMIDI_OutSize(USBH_HandleTypeDef *phost);
+/* Non-blocking: USBH_BUSY while the previous transfer to that device is in
+ * flight, USBH_OK when queued, USBH_FAIL when not ready. */
+USBH_StatusTypeDef HUBMIDI_Transmit(USBH_HandleTypeDef *phost, uint8_t dev, uint8_t *data,
+                                    uint16_t len);
+uint16_t HUBMIDI_OutSize(USBH_HandleTypeDef *phost, uint8_t dev);
 
 void HUBMIDI_SetReceiveCallback(HUBMIDI_RxCallback cb, void *user);
 
 /* For a diagnostic report. */
 typedef struct
 {
-    uint8_t  state;        /* internal state number */
+    uint8_t  state;        /* enumeration state number (see the .c) */
     uint8_t  ports;        /* the hub's port count */
-    uint8_t  port;         /* the port the device is on, 0 = none yet */
+    uint8_t  port;         /* the port being scanned */
     uint16_t port_status;  /* last wPortStatus read */
-    uint16_t vid, pid;     /* the device behind the hub */
-    uint8_t  fail_state;   /* the state that failed, 0 = none */
+    uint8_t  fail_state;   /* the last state that failed, 0 = none */
     uint8_t  fail_code;    /* USBH_StatusTypeDef of that failure */
     uint16_t skipped;      /* ports rejected (bit n = port n) */
+    uint16_t done;         /* ports carrying a configured device */
+    uint16_t dev_vid[HUBMIDI_MAX_DEVICES], dev_pid[HUBMIDI_MAX_DEVICES];
+    uint8_t  dev_port[HUBMIDI_MAX_DEVICES]; /* 0 = slot empty */
 } HUBMIDI_Info;
 HUBMIDI_Info HUBMIDI_GetInfo(void);
 
