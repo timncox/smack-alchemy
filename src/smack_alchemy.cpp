@@ -58,6 +58,7 @@
 #include "extras.h"
 #include "picker.h"
 #include "launchpad.h"
+#include "usb_shared.h"
 #include "ff.h"
 #include "versio_alloc.h"
 
@@ -869,6 +870,14 @@ static void OnFrame(void)
 
     /* The USB port only takes effect at power-up, so a change is saved as
      * soon as Settings closes -- nobody should have to wait before cycling. */
+    /* A USB port change goes to the card for every firmware, as soon as
+     * Settings closes, independently of this firmware's autosave. */
+    static int shared_written = -2;
+    if (shared_written == -2) shared_written = (int)usb_port.Value();
+    if (!sact && (int)usb_port.Value() != shared_written && !picker::Busy()
+        && usbshared::Save(sd, (int)usb_port.Value(), now))
+        shared_written = (int)usb_port.Value();
+
     static int saved_usb = -1;
     if (saved_usb < 0) saved_usb = (int)usb_port.Value();
     const bool usb_changed = !sact && (int)usb_port.Value() != saved_usb;
@@ -1216,6 +1225,12 @@ int main(void)
     extras.cpu_peak  = 0.0f;
     g_saved_peak     = 0.0f;
     g_readout_until  = System::GetNow() + 2500u;
+
+    /* The front port's role is one setting for every firmware on the card:
+     * adopt the card's value, so a picker switch keeps Launchpad mode. */
+    const int shared_usb = usbshared::Load(sd, 500);
+    if (shared_usb >= 0 && shared_usb != (int)usb_port.Value())
+        usb_port.Default((uint8_t)shared_usb);
 
     /* B1 held through power-up: Mac mode this boot. Read over ~20 ms so
      * the debouncer has settled whatever came before. */

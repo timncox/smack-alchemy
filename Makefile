@@ -32,7 +32,8 @@ LIBDAISY_DIR = lib/libDaisy
 CPP_SOURCES = \
     src/smack_alchemy.cpp \
     src/picker.cpp \
-    src/launchpad.cpp
+    src/launchpad.cpp \
+    src/usb_shared.cpp
 
 # smack_core_alchemy.c #includes vendor/smack_core.c with calloc/free
 # redirected to SDRAM. Never list vendor/smack_core.c here as well —
