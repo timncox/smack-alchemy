@@ -57,6 +57,8 @@
 #include "dj_filter.h"
 #include "extras.h"
 #include "picker.h"
+#include "launchpad.h"
+#include "ff.h"
 #include "versio_alloc.h"
 
 /* versio_alloc.h first, then the engine inside extern "C" -- see the note in
@@ -483,18 +485,147 @@ static uint32_t btn_t0       = 0;
 static uint32_t btn_last_tap = 0;
 static int      btn_tap_n    = 0;
 
-static void set_punch(bool on)
+/* The effect held on the Launchpad, -1 = none. It wins over B2's punch. */
+static int g_lp_punch   = -1;
+static int g_punch_sent = -1;
+
+static void set_punch(bool b2)
 {
-    if (on == G_PUNCHING) return;
-    G_PUNCHING = on;
+    const int want = g_lp_punch >= 0 ? g_lp_punch : (b2 ? g_punch_fx : -1);
+    if (want == g_punch_sent) return;
+    g_punch_sent = want;
+    G_PUNCHING   = want >= 0;
     /* punch_fx: "-1" releases, "0" punches CLEAN, 1.. forces that effect. */
-    set_param_int("punch_fx", on ? g_punch_fx : -1);
+    set_param_int("punch_fx", want);
+}
+
+/* ---- Launchpad Mini MK3 -----------------------------------------------------
+ *
+ *   rows 1-4   the 27 punch effects in order (CLEAN first): hold a pad to
+ *              punch that effect, release to let go. Dim = available,
+ *              bright = the one B2 punches (the PUNCH FX knob), green = held.
+ *   row 8      the loop's playhead (cyan in LIVE)
+ *   top 1      CAPTURE (red while recording, amber armed)
+ *   top 2      RE-ROLL          top 3  LIVE on/off          top 4  CLEAR (hold 1 s)
+ *
+ * USB port (Settings P5): Mac or Launchpad, from the next power-up. In
+ * Launchpad mode B2 shows the host: blue starting, cyan no device, yellow
+ * enumerating (or working behind a hub), red gave up, green running. Hold
+ * B1 at power-up to boot in Mac mode whatever the setting says.
+ */
+static const char* const kUsbLabels[2] = {"Mac", "Launchpad"};
+static SelectorHandle usb_port;
+static bool     g_lp_mode    = false;
+static uint8_t  g_lp_stage   = 0;
+static uint32_t g_lp_boot_ms = 0;
+static bool     g_lp_clear_down = false;
+static bool     g_lp_clear_fired = false;
+static uint32_t g_lp_clear_t0 = 0;
+
+static void lp_poll(uint32_t now)
+{
+    lp::Poll(now);
+    lp::Event e;
+    const bool live = !settings.IsActive();
+    while (lp::PopEvent(&e))
+    {
+        if (!live) continue;
+        if (e.kind == lp::Kind::Grid && e.y < 4)
+        {
+            const int fx = e.y * 8 + e.x;
+            if (fx >= 27) continue;
+            if (e.down) g_lp_punch = fx;
+            else if (g_lp_punch == fx) g_lp_punch = -1;
+        }
+        else if (e.kind == lp::Kind::Top)
+        {
+            if (e.x == 0 && e.down)
+            {
+                smack_set_param(S, "capture", "1");
+                if (!clk_locked(&CLK)) smack_set_param(S, "detect_bpm", "1");
+            }
+            else if (e.x == 1 && e.down) smack_set_param(S, "reroll", "1");
+            else if (e.x == 2 && e.down) G_LIVE = !G_LIVE;
+            else if (e.x == 3)
+            {
+                if (e.down) { g_lp_clear_down = true; g_lp_clear_fired = false; g_lp_clear_t0 = now; }
+                else g_lp_clear_down = false;
+            }
+        }
+    }
+    if (g_lp_clear_down && !g_lp_clear_fired && now - g_lp_clear_t0 > 1000u)
+    {
+        smack_set_param(S, "clear", "1");
+        g_lp_clear_fired = true;
+    }
+}
+
+static void lp_paint(void)
+{
+    if (!lp::Connected()) return;
+    static const uint8_t kRowDim[4]    = {lp::kOrangeDim, lp::kAmberDim, lp::kCyanDim, lp::kMagentaDim};
+    static const uint8_t kRowBright[4] = {lp::kOrange, lp::kAmber, lp::kCyan, lp::kMagenta};
+    for (int fx = 0; fx < 32; fx++)
+    {
+        const uint8_t x = (uint8_t)(fx % 8), y = (uint8_t)(fx / 8);
+        uint8_t c = lp::kOff;
+        if (fx < 27)
+        {
+            c = (fx == 0) ? lp::kGrey : kRowDim[y];
+            if (fx == g_punch_fx) c = (fx == 0) ? lp::kWhite : kRowBright[y];
+            if (fx == g_lp_punch) c = lp::kGreen;
+        }
+        lp::SetGrid(x, y, c);
+    }
+    const bool looping = G_RUN_STATE == 3;
+    const int  head    = looping ? (int)(G_PLAYPOS * 8.0f) : -1;
+    for (uint8_t x = 0; x < 8; x++)
+        lp::SetGrid(x, 7, (int)x == head ? (G_LIVE ? lp::kCyan : lp::kGreen) : lp::kOff);
+    lp::SetTop(0, G_RUN_STATE == 2 ? lp::kRed : (G_RUN_STATE == 1 ? lp::kAmber : lp::kRedDim));
+    lp::SetTop(1, lp::kAmberDim);
+    lp::SetTop(2, G_LIVE ? lp::kCyan : lp::kCyanDim);
+    lp::SetTop(3, g_lp_clear_down ? lp::kRed : lp::kRedDim);
+    lp::SetLogo(lp::kGreen);
+}
+
+/* Host report to /lpdiag.txt once, 17 s after boot, unless a Launchpad came up. */
+alignas(32) static ALCHEMY_SDMMC_BSS FIL  s_lpdiag_fil;
+alignas(32) static ALCHEMY_SDMMC_BSS char s_lpdiag_buf[4096];
+static bool g_lpdiag_done = false;
+
+static void lp_write_report(uint32_t now)
+{
+    if (g_lpdiag_done || g_lp_stage < 2 || now - g_lp_boot_ms < 17000u) return;
+    if (lp::Connected()) { g_lpdiag_done = true; return; }
+    if (picker::Busy() || !sd.EnsureMounted(now)) return;
+    g_lpdiag_done = true;
+    const int n = lp::Report(s_lpdiag_buf, (int)sizeof s_lpdiag_buf);
+    if (f_open(&s_lpdiag_fil, "/lpdiag.txt", FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return;
+    UINT w = 0;
+    f_write(&s_lpdiag_fil, s_lpdiag_buf, (UINT)n, &w);
+    f_close(&s_lpdiag_fil);
 }
 
 static void OnPoll(uint32_t now)
 {
+    if (g_lp_mode)
+    {
+        if (g_lp_stage == 0 && now - g_lp_boot_ms > 2000u) g_lp_stage = 1;
+        else if (g_lp_stage == 1 && now - g_lp_boot_ms > 2300u)
+        {
+            lp::Init();
+            g_lp_stage = 2;
+        }
+        else if (g_lp_stage >= 2)
+        {
+            lp_poll(now);
+            g_lp_stage = (uint8_t)(2 + lp::Stage());
+        }
+    }
+
     if (settings.IsActive())
     {
+        g_lp_punch = -1;
         set_punch(false);
         btn_down    = false;
         btn_cleared = false;
@@ -618,7 +749,11 @@ static void OnFrame(void)
     if (knob_changed(k_punch, punch.Norm(), &v))
     {
         g_punch_fx = v;
-        if (G_PUNCHING) set_param_int("punch_fx", v);
+        if (G_PUNCHING && g_lp_punch < 0)
+        {
+            g_punch_sent = v;
+            set_param_int("punch_fx", v);
+        }
         mark_dirty(now);
     }
 
@@ -724,6 +859,8 @@ static void OnFrame(void)
      * poll is paused for the duration. The epsilons above are the wear
      * limiter; this is a ceiling on write frequency, not a write rate.
      */
+    if (g_lp_mode) { lp_paint(); lp_write_report(now); }
+
     if (g_dirty && now - g_dirty_since >= 5000u && !sact && !picker::Busy()
         && !hw.buttons[kButtonB1].Pressed() && !hw.buttons[kButtonB2].Pressed()
         && !hw.buttons[kButtonB3].Pressed())
@@ -809,6 +946,13 @@ static void OnRender(uint32_t t_ms)
     else if (!clk_locked(&CLK))      ck = kGrey;
     else if (CLK.mode == CLK_INFER)  ck = kPurple;
     else                             ck = kBlue;
+    if (g_lp_mode)
+    {
+        static const LedPanel::Rgb kStage[6] = {
+            {0x40, 0x00, 0x40}, {0x00, 0x00, 0xFF}, {0x00, 0xC0, 0xC0},
+            {0xFF, 0xC0, 0x00}, {0xFF, 0x00, 0x00}, {0x00, 0xFF, 0x00}};
+        if (g_lp_stage < 5) ck = kStage[g_lp_stage];   /* running: B2 is B2 again */
+    }
     L.SetButtonPair(kButtonB2, L.ScaleGlobal(ck));
 
     if (pager.Page() != kPageSetup)
@@ -959,6 +1103,14 @@ int main(void)
     picker::Install(settings, kSettingsFirmware, sd, hw);
     settings.UseBrightness();
     settings.UsePresets(presets);
+    usb_port = settings.Page(kSettingsMain).Pot(5)
+        .Selector(kUsbLabels).Default(0)
+        .Ident("usb").Name("USB port")
+        .Help("**Mac**: the front USB-C is HostLink, for the web programmer, "
+              "presets and the card. **Launchpad**: the Lab is the USB host "
+              "for a Launchpad Mini MK3, direct with 5 V injected or through "
+              "a powered hub adapter. From the next power-up; hold B1 while "
+              "powering up to get Mac mode back.");
     clock_mode = settings.Page(kSettingsMain).Pot(4)
         .Selector(kClockModes).Default(0)
         .Ident("clock.mode").Name("Clock In")
@@ -1050,18 +1202,23 @@ int main(void)
     g_saved_peak     = 0.0f;
     g_readout_until  = System::GetNow() + 2500u;
 
+    hw.ProcessAllControls();
+    const bool force_mac = hw.buttons[kButtonB1].Pressed();
+    g_lp_mode    = (int)usb_port.Value() == 1 && !force_mac;
+    g_lp_boot_ms = System::GetNow();
+
     hw.StartAudio(AudioCallback);
     cpu.Reset();
 
     loop.Use(pager)
         .Use(settings)
         .Use(cv_matrix)
-        .Use(host)
         .Use(play_page)
         .Use(setup_page)
         .OnFrame(OnFrame)
         .OnPoll(OnPoll)
         .OnRender(OnRender);
+    if (!g_lp_mode) loop.Use(host);
 
     for (;;) loop.Tick();
 }

@@ -31,7 +31,8 @@ LIBDAISY_DIR = lib/libDaisy
 # ── App sources ─────────────────────────────────────────────────────────────
 CPP_SOURCES = \
     src/smack_alchemy.cpp \
-    src/picker.cpp
+    src/picker.cpp \
+    src/launchpad.cpp
 
 # smack_core_alchemy.c #includes vendor/smack_core.c with calloc/free
 # redirected to SDRAM. Never list vendor/smack_core.c here as well —
@@ -39,7 +40,8 @@ CPP_SOURCES = \
 C_SOURCES = \
     src/clock_adapter.c \
     src/versio_alloc.c \
-    src/smack_core_alchemy.c
+    src/smack_core_alchemy.c \
+    src/usbh_hub_midi.c
 
 # ── Alchemy SDK, compiled straight from the submodule ───────────────────────
 CPP_SOURCES += $(sort $(shell find $(ALCHEMY_DIR)/framework/src -name '*.cpp'))
