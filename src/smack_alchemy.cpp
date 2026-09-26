@@ -528,9 +528,44 @@ static bool     g_lp_clear_down = false;
 static bool     g_lp_clear_fired = false;
 static uint32_t g_lp_clear_t0 = 0;
 
+/* ---- Gamepad (Haute42 in XInput mode, through the hub) ---------------------
+ *
+ * Every button holds a punch effect, like a Launchpad pad: the last one
+ * pressed wins, and letting it go falls back to another still held.
+ *
+ *   top row     X Retrig    Y Repeat    RB Reverse   LB Tape Stop
+ *   bottom row  A Filter    B Crush     RT Delay     LT Freeze
+ *   directions  Left Gate   Down Scratch  Right Dist  Up Verb
+ *   L3 Pitch    R3 Phaser
+ */
+static const int8_t kPadFx[18] = {
+    /* Up Down Left Right Start Back L3 R3 */ 22, 12, 5, 20, -1, -1, 3, 21,
+    /* LB RB Guide - A B X Y */               10, 2, -1, -1, 15, 7, 1, 8,
+    /* LT RT */                               18, 19,
+};
+static uint32_t g_pad_prev = 0;
+
+static void pad_poll(void)
+{
+    const uint32_t b = pad::Buttons();
+    const uint32_t pressed = b & ~g_pad_prev, released = g_pad_prev & ~b;
+    g_pad_prev = b;
+    if (settings.IsActive()) return;
+    for (int i = 0; i < 18; i++)
+        if ((pressed >> i & 1u) && kPadFx[i] >= 0) g_lp_punch = kPadFx[i];
+    for (int i = 0; i < 18; i++)
+    {
+        if (!(released >> i & 1u) || kPadFx[i] < 0 || g_lp_punch != kPadFx[i]) continue;
+        g_lp_punch = -1;
+        for (int j = 0; j < 18; j++)
+            if ((b >> j & 1u) && kPadFx[j] >= 0) g_lp_punch = kPadFx[j];
+    }
+}
+
 static void lp_poll(uint32_t now)
 {
     lp::Poll(now);
+    pad_poll();
     lp::Event e;
     const bool live = !settings.IsActive();
     while (lp::PopEvent(&e))

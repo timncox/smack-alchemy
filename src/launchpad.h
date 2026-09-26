@@ -148,3 +148,37 @@ void SetKnobLed(uint8_t row, uint8_t col, uint8_t colour);
 void SetButtonLed(uint8_t row, uint8_t col, uint8_t colour);
 
 } // namespace xl
+
+/* ---------------------------------------------------------------------------
+ * An XInput gamepad (e.g. a Haute42 leverless on GP2040-CE in XInput mode,
+ * 045E:028E) through the same hub. Only through the hub: plugged straight
+ * into the Lab it is not recognised. What is held is kept as a bit mask --
+ * the buttons are for holding, and a mask cannot overflow a queue.
+ * Bits 0-15 are XInput's wButtons; the triggers count as buttons 16/17.
+ */
+namespace pad
+{
+
+constexpr uint32_t kUp    = 1u << 0;
+constexpr uint32_t kDown  = 1u << 1;
+constexpr uint32_t kLeft  = 1u << 2;
+constexpr uint32_t kRight = 1u << 3;
+constexpr uint32_t kStart = 1u << 4;
+constexpr uint32_t kBack  = 1u << 5;
+constexpr uint32_t kL3    = 1u << 6;
+constexpr uint32_t kR3    = 1u << 7;
+constexpr uint32_t kLB    = 1u << 8;
+constexpr uint32_t kRB    = 1u << 9;
+constexpr uint32_t kGuide = 1u << 10;
+constexpr uint32_t kA     = 1u << 12;
+constexpr uint32_t kB     = 1u << 13;
+constexpr uint32_t kX     = 1u << 14;
+constexpr uint32_t kY     = 1u << 15;
+constexpr uint32_t kLT    = 1u << 16;
+constexpr uint32_t kRT    = 1u << 17;
+
+bool     Connected();
+uint32_t Buttons();      /* held now */
+uint32_t ReportCount();  /* reports received, for a readout */
+
+} // namespace pad

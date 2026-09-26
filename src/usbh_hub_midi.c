@@ -66,6 +66,9 @@ typedef struct
     uint16_t in_size, out_size;
     uint8_t  rx;
     uint16_t vid, pid;
+    uint8_t  kind;     /* HUBMIDI_KIND_* */
+    uint8_t  interval; /* interrupt IN poll period, ms (XInput) */
+    uint32_t armed_ms; /* when the interrupt IN was last armed */
 } Dev;
 
 typedef struct
@@ -85,7 +88,7 @@ typedef struct
     /* the device being enumerated */
     uint8_t  e_addr, e_mps0, e_cfg_value;
     uint16_t e_cfg_total, e_vid, e_pid;
-    uint8_t  e_in_ep, e_out_ep;
+    uint8_t  e_in_ep, e_out_ep, e_kind, e_interval;
     uint16_t e_in_size, e_out_size;
     uint8_t  fail_state, fail_code;
     Dev      dev[HUBMIDI_MAX_DEVICES];
@@ -159,12 +162,15 @@ static int free_slot(void)
     return -1;
 }
 
-/* Find the first MIDI-streaming interface's bulk endpoints. */
+/* Find the first MIDI-streaming interface's bulk endpoints, or an XInput
+ * interface's interrupt IN endpoint. */
 static int parse_cfg(const uint8_t *c, uint16_t total)
 {
     uint16_t i    = 0;
-    int      midi = 0;
+    int      midi = 0, pad = 0;
     H.e_in_ep = H.e_out_ep = 0;
+    H.e_kind = HUBMIDI_KIND_MIDI;
+    H.e_interval = 1;
     while (i + 2 <= total)
     {
         const uint8_t len = c[i], type = c[i + 1];
@@ -172,7 +178,17 @@ static int parse_cfg(const uint8_t *c, uint16_t total)
         if (type == 0x04 && len >= 9) /* interface */
         {
             if (midi && H.e_in_ep && H.e_out_ep) break;
+            if (pad && H.e_in_ep) break;
             midi = (c[i + 5] == 0x01 && c[i + 6] == 0x03);
+            pad  = (c[i + 5] == 0xFF && c[i + 6] == 0x5D && c[i + 7] == 0x01);
+        }
+        else if (type == 0x05 && len >= 7 && pad && (c[i + 3] & 0x03) == 0x03
+                 && (c[i + 2] & 0x80U) && !H.e_in_ep)
+        {
+            H.e_in_ep    = c[i + 2];
+            H.e_in_size  = le16(&c[i + 4]) & 0x03FFU;
+            H.e_interval = c[i + 6] ? c[i + 6] : 1;
+            H.e_kind     = HUBMIDI_KIND_XINPUT;
         }
         else if (type == 0x05 && len >= 7 && midi && (c[i + 3] & 0x03) == 0x02)
         {
@@ -184,6 +200,7 @@ static int parse_cfg(const uint8_t *c, uint16_t total)
         i = (uint16_t)(i + len);
     }
     if (H.e_in_size > sizeof s_rx[0]) H.e_in_size = sizeof s_rx[0];
+    if (H.e_kind == HUBMIDI_KIND_XINPUT) return H.e_in_ep != 0;
     return H.e_in_ep && H.e_out_ep;
 }
 
@@ -208,7 +225,17 @@ static void rx_step(USBH_HandleTypeDef *ph, int i)
     if (!d->ready) return;
     if (d->rx == RX_ARM)
     {
-        USBH_BulkReceiveData(ph, s_rx[i], d->in_size, d->in_pipe);
+        if (d->kind == HUBMIDI_KIND_XINPUT)
+        {
+            /* A NAK halts an interrupt channel (URB_NOTREADY) and nothing
+             * re-arms it: poll again once per bInterval, like the HID class. */
+            const uint32_t now = HAL_GetTick();
+            if (now - d->armed_ms < d->interval) return;
+            d->armed_ms = now;
+            USBH_InterruptReceiveData(ph, s_rx[i], (uint8_t)d->in_size, d->in_pipe);
+        }
+        else
+            USBH_BulkReceiveData(ph, s_rx[i], d->in_size, d->in_pipe);
         d->rx = RX_POLL;
         return;
     }
@@ -219,7 +246,8 @@ static void rx_step(USBH_HandleTypeDef *ph, int i)
         d->rx = RX_ARM;
         if (s_cb) s_cb((uint8_t)i, s_rx[i], n, s_user);
     }
-    else if (u == USBH_URB_ERROR || u == USBH_URB_STALL)
+    else if (u == USBH_URB_ERROR || u == USBH_URB_STALL
+             || (u == USBH_URB_NOTREADY && d->kind == HUBMIDI_KIND_XINPUT))
         d->rx = RX_ARM; /* re-arm; an unplug surfaces as a disconnect */
 }
 
@@ -443,14 +471,20 @@ static void enum_step(USBH_HandleTypeDef *ph, uint32_t now)
                 d->out_ep   = H.e_out_ep;
                 d->in_size  = H.e_in_size;
                 d->out_size = H.e_out_size;
+                d->kind     = H.e_kind;
+                d->interval = H.e_interval;
                 d->in_pipe  = USBH_AllocPipe(ph, d->in_ep);
                 USBH_OpenPipe(ph, d->in_pipe, d->in_ep, d->addr, ph->device.speed,
-                              USBH_EP_BULK, d->in_size);
+                              d->kind == HUBMIDI_KIND_XINPUT ? USBH_EP_INTERRUPT : USBH_EP_BULK,
+                              d->in_size);
                 USBH_LL_SetToggle(ph, d->in_pipe, 0U);
-                d->out_pipe = USBH_AllocPipe(ph, d->out_ep);
-                USBH_OpenPipe(ph, d->out_pipe, d->out_ep, d->addr, ph->device.speed,
-                              USBH_EP_BULK, d->out_size);
-                USBH_LL_SetToggle(ph, d->out_pipe, 0U);
+                if (d->kind == HUBMIDI_KIND_MIDI)
+                {
+                    d->out_pipe = USBH_AllocPipe(ph, d->out_ep);
+                    USBH_OpenPipe(ph, d->out_pipe, d->out_ep, d->addr, ph->device.speed,
+                                  USBH_EP_BULK, d->out_size);
+                    USBH_LL_SetToggle(ph, d->out_pipe, 0U);
+                }
                 d->rx       = RX_ARM;
                 d->ready    = 1;
                 H.done     |= (uint16_t)(1U << H.port);
@@ -523,15 +557,21 @@ void HUBMIDI_DevId(uint8_t dev, uint16_t *vid, uint16_t *pid)
     *pid = H.dev[dev].pid;
 }
 
+uint8_t HUBMIDI_DevKind(uint8_t dev)
+{
+    return dev < HUBMIDI_MAX_DEVICES ? H.dev[dev].kind : HUBMIDI_KIND_MIDI;
+}
+
 uint16_t HUBMIDI_OutSize(USBH_HandleTypeDef *ph, uint8_t dev)
 {
-    return HUBMIDI_DevReady(ph, dev) ? H.dev[dev].out_size : 0;
+    return HUBMIDI_DevReady(ph, dev) && H.dev[dev].kind == HUBMIDI_KIND_MIDI
+               ? H.dev[dev].out_size : 0;
 }
 
 USBH_StatusTypeDef HUBMIDI_Transmit(USBH_HandleTypeDef *ph, uint8_t dev, uint8_t *data,
                                     uint16_t len)
 {
-    if (!HUBMIDI_DevReady(ph, dev)) return USBH_FAIL;
+    if (!HUBMIDI_DevReady(ph, dev) || H.dev[dev].kind != HUBMIDI_KIND_MIDI) return USBH_FAIL;
     const Dev                 *d = &H.dev[dev];
     const USBH_URBStateTypeDef u = USBH_LL_GetURBState(ph, d->out_pipe);
     if (u != USBH_URB_IDLE && u != USBH_URB_DONE)
