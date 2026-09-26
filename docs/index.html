@@ -204,6 +204,32 @@ footer a{color:var(--dim);border-bottom-color:rgba(145,138,158,.3)}
 footer a:hover{color:var(--acc)}
 footer p{max-width:70ch}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- USB + controllers (the controller drawings) ---------- */
+.ctl{background:var(--ctl-bg);color:var(--ctl-ink);border:1px solid var(--line);border-radius:3px;padding:16px;margin:10px 0 18px;max-width:470px}
+.ctl .cap{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--ctl-dim);margin-top:12px;line-height:1.5}
+.lpd{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:4px}
+.lpd i{display:flex;align-items:center;justify-content:center;aspect-ratio:1;border-radius:3px;background:#1f1d24;
+  font-family:var(--mono);font-style:normal;font-size:clamp(7px,2.1vw,9.5px);font-weight:600;color:rgba(12,11,17,.85);line-height:1;overflow:hidden;white-space:nowrap}
+.lpd i.dk{color:rgba(236,231,243,.8)}
+.lpd i.rnd{border-radius:50%;transform:scale(.72)}
+.lpd i.logo{border-radius:2px;transform:scale(.6)}
+.xld{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:6px 5px;justify-items:center}
+.xld .kn{width:78%;aspect-ratio:1;border-radius:50%;border:3px solid #333;background:#15141a;box-sizing:border-box}
+.xld .fd{width:26%;height:74px;border-radius:3px;background:#0b0a0e;border:1px solid #3a3844;position:relative;margin:4px 0}
+.xld .fd::after{content:"";position:absolute;left:-90%;right:-90%;top:40%;height:12px;border-radius:2px;background:#6a6a70}
+.xld .fd.on::after{background:var(--ctl-ink)}
+.xld .bt{width:88%;height:16px;border-radius:2px;background:#1f1d24}
+.xld .bt.lit{box-shadow:0 0 7px currentColor}
+.xld .n{font-family:var(--mono);font-size:9.5px;color:var(--ctl-dim)}
+.h42{width:100%;height:auto;display:block}
+.h42 circle{fill:#1d1b24;stroke-width:2.5}
+.h42 .bl{font-family:var(--mono);font-size:10px;font-weight:600;fill:var(--ctl-ink);text-anchor:middle;dominant-baseline:central}
+.h42 .fx{font-family:var(--mono);font-size:8px;fill:var(--ctl-dim);text-anchor:middle}
+.h42 .body{fill:none;stroke:var(--ctl-dim);stroke-opacity:.35;stroke-width:1.2}
+.h42 .xtra{font-family:var(--mono);font-size:7.5px;fill:var(--ctl-dim);letter-spacing:.06em}
+.swq{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:7px;vertical-align:-1px}
+:root{--ctl-bg:var(--panel);--ctl-ink:var(--ink);--ctl-dim:var(--dim)}
 </style>
 </head>
 <body>
@@ -219,6 +245,7 @@ footer p{max-width:70ch}
   <a class="s" href="#cv">CV</a>
   <a class="s" href="#rings">Rings</a>
   <a class="s" href="#card">Card</a>
+  <a class="s" href="#usb">USB</a>
   <a class="s" href="#build">Build</a>
   <a class="s" href="#install">Install</a>
   <a class="s" href="#built">Built</a>
@@ -595,9 +622,9 @@ footer p{max-width:70ch}
   <h3 class="h">Settings — hold B2 + B3 for two seconds</h3>
   <div class="sub">The SDK's own settings layer; B1 steps through its pages, B2 or B3 leaves</div>
   <div class="cols">
-    <div class="card"><div class="k">Page 1</div><h4>Brightness · presets · clock in</h4>
+    <div class="card"><div class="k">Page 1</div><h4>Brightness · presets · clock in · USB</h4>
       <p><b>P1</b> ring brightness. <b>P3 / P4</b> preset slot and action, sixteen slots. <b>P5</b>
-        CLOCK IN: Auto (the default) or Clock.</p>
+        CLOCK IN: Auto (the default) or Clock. <b>P6</b> USB PORT: Mac, Launchpad or Audio, <a href="#usb">below</a>.</p>
       <p style="margin-top:10px">Save your own presets to the first twelve slots. The last four
         hold the working state of Smack, Mark, Belt and Relay, one each, in that order; saving a
         preset into one of them by hand replaces that firmware's working state.</p></div>
@@ -673,9 +700,155 @@ footer p{max-width:70ch}
     through against the memory map but not exercised.</p>
 </div></section>
 
+<section id="usb"><div class="wrap">
+  <h2 class="sh">USB and controllers</h2>
+  <div class="sub">10 — One front port, three jobs: the Mac, controllers, or a sound card</div>
+  <p class="lede">The front USB-C does one thing per power-up. By default it talks to the Mac: the web
+    programmer, presets, the card. Switched over, the Lab becomes the USB host for a Launchpad Mini MK3,
+    a Launch Control XL and a Haute42 gamepad, or a two-in, two-out USB audio interface.</p>
+
+  <h3 class="h">The USB port setting</h3>
+  <div class="sub">Settings page 1 · P6, bottom right</div>
+  <p style="margin-bottom:16px">Hold B2 + B3 for two seconds to open Settings, and turn <b>P6</b>, the bottom-right pot of Settings page 1. It is a three-way selector:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Mode</th><th>The front USB-C is</th></tr></thead>
+    <tbody>
+      <tr><td>Mac</td><td><b>HostLink</b>, the default: the web programmer, presets and the card's files, with the module racked.</td></tr>
+      <tr><td>Launchpad</td><td><b>The USB host for controllers.</b> The Lab drives a Launchpad Mini MK3, a Launch Control XL and a Haute42, through a powered dongle; see below. No HostLink this boot.</td></tr>
+      <tr><td>Audio</td><td><b>A class-compliant USB audio interface</b> (USB Audio Class 1): 2 channels in from J1/J2, 2 out to J9/J10, 48 kHz, 24-bit, no driver needed on a Mac. Smack's engine is bypassed: what the computer plays comes out of J9/J10, what comes in on J1/J2 goes to the computer. There is no volume control in the path and J9/J10 are DC-coupled, so a DAW can send CV through them. No HostLink and no controllers this boot.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note">
+    <h3>One setting for the whole card, from the next power-up</h3>
+    <p>The mode is kept on the SD card in <code>/alchemy/usb.cfg</code>, shared by every firmware on it: each one adopts
+      the card's value at boot and writes a change back, so switching firmware in the picker keeps the mode. A change
+      takes effect the next time the module powers up.</p>
+    <p><b>Hold B1 while powering up</b> for Mac mode for that one boot, whatever the setting says: the way back to the
+      web programmer without opening Settings. The port has one USB role at a time, so Audio mode means no controllers,
+      and neither Launchpad nor Audio mode has HostLink. The bootloader's DFU (hold B3 at power-on) is unaffected.</p>
+  </div>
+
+  <h3 class="h">What B2 says about the port</h3>
+  <div class="sub">B2 is borrowed while the USB side starts up</div>
+  <div class="cols">
+    <div class="card"><div class="k">Launchpad mode</div><h4>The host starting up</h4>
+      <div class="tablewrap"><table>
+        <tbody>
+          <tr><td><span class="sw" style="color:#400040"></span>dim purple</td><td>The first two seconds after power-up, before the host starts.</td></tr>
+          <tr><td><span class="sw" style="color:#0000ff"></span>blue</td><td>Starting the USB host.</td></tr>
+          <tr><td><span class="sw" style="color:#00c0c0"></span>cyan</td><td>Host running, nothing on the wire: no dongle seen.</td></tr>
+          <tr><td><span class="sw" style="color:#ffc000"></span>yellow</td><td>A device is attached and enumerating, or the dongle's hub is up with no controller behind it yet.</td></tr>
+          <tr><td><span class="sw" style="color:#ff0000"></span>red</td><td>The host gave up: an abort, an unsupported device, an error.</td></tr>
+          <tr><td>its usual colour</td><td>A controller is up: B2 goes back to its CLOCK job.</td></tr>
+          <tr><td><span class="sw" style="color:#ffffff"></span>white</td><td>While any Haute42 button is held.</td></tr>
+        </tbody>
+      </table></div></div>
+    <div class="card"><div class="k">Audio mode</div><h4>The interface</h4>
+      <div class="tablewrap"><table>
+        <tbody>
+          <tr><td><span class="sw" style="color:#400040"></span>dim purple</td><td>Not started yet.</td></tr>
+          <tr><td><span class="sw" style="color:#00c0c0"></span>cyan</td><td>Waiting for a computer.</td></tr>
+          <tr><td><span class="sw" style="color:#ffc000"></span>yellow</td><td>Connected, no stream open.</td></tr>
+          <tr><td><span class="sw" style="color:#00ff00"></span>green</td><td>Streaming, at least one direction.</td></tr>
+        </tbody>
+      </table></div></div>
+  </div>
+  <p style="margin-top:20px">If the host does not come up, a report of what it saw is written to the card as
+    <code>/lpdiag.txt</code> about 17 seconds after power-up, for reading back in Mac mode.</p>
+  
+
+  <h3 class="h">Hooking up controllers</h3>
+  <div class="sub">A powered USB-C dongle with a hub inside · up to three controllers at once</div>
+  <div class="cols">
+    <div class="card"><div class="k">Power</div><h4>The front port has no 5 V</h4>
+      <p>The Lab's USB-C gives no bus power, so a controller needs it from somewhere else: a <b>powered</b> USB-C dongle
+        with a USB hub inside. Power the dongle, plug it into the Lab's front USB-C, and plug the controllers into the
+        dongle. The one it was developed with carries a hub and an Ethernet chip; a device that is not a controller, like the Ethernet chip, is switched off and skipped.</p></div>
+    <div class="card"><div class="k">Behind the hub</div><h4>Three at once, one hub deep</h4>
+      <p>Up to three controllers at a time, full speed. Free ports are rescanned every half second, so a controller can
+        go in after power-up. Unplugging one mid-session is not handled tidily: the host sees errors and may reset, so
+        power down to rearrange. The gamepad is only recognised behind a hub, never plugged straight in.</p></div>
+  </div>
+  <div class="tablewrap" style="margin-top:22px"><table>
+    <thead><tr><th>Controller</th><th>USB ID</th><th>Set-up</th></tr></thead>
+    <tbody>
+      <tr><td>Launchpad Mini MK3</td><td class="num">Novation 1235:0113</td><td>None: the Lab puts it in Programmer mode and paints its pads.</td></tr>
+      <tr><td>Launch Control XL</td><td class="num">Novation 1235:0061</td><td>None: factory template 1 is selected automatically at connect, and again if the template is changed on the device. The MIDI channel is ignored.</td></tr>
+      <tr><td>Haute42</td><td class="num">045E:028E</td><td><b>Must be in XInput mode</b> (GP2040-CE), where it shows up as an Xbox 360 controller.</td></tr>
+    </tbody>
+  </table></div>
+  <p style="margin-top:20px">While Settings is open the controllers do nothing: the pads, buttons and knobs are ignored
+    and any held effect lets go. Knobs and faders move the pages' stored values, so what they set is saved like a pot
+    move, and the panel pot then has to catch the new value before it takes over again.</p>
+
+  <h3 class="h">Launchpad Mini MK3</h3>
+  <div class="sub">The 8 × 8 grid, the round top row and the logo; rows count from the top</div>
+  <div class="ctl" role="img" aria-label="Launchpad Mini MK3 map for Smack: the 27 punch effects on rows 1 to 4, the playhead on row 8, capture, re-roll, live and clear on the top row"><div class="lpd"><i class="dk rnd" style="background:#6e1c16">CAP</i><i class="dk rnd" style="background:#6c5e16">RR</i><i class="dk rnd" style="background:#135f68">LV</i><i class="dk rnd" style="background:#6e1c16">CLR</i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i><i class="logo" style="background:#2cff52;box-shadow:0 0 7px #2cff52"></i><i class="dk" style="background:#6a6a70">0</i><i style="background:#ff7a1a;box-shadow:0 0 7px #ff7a1a">1</i><i class="dk" style="background:#6e3612">2</i><i class="dk" style="background:#6e3612">3</i><i class="dk" style="background:#6e3612">4</i><i class="dk" style="background:#6e3612">5</i><i class="dk" style="background:#6e3612">6</i><i class="dk" style="background:#6e3612">7</i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk" style="background:#6c5e16">8</i><i class="dk" style="background:#6c5e16">9</i><i class="dk" style="background:#6c5e16">10</i><i class="dk" style="background:#6c5e16">11</i><i class="dk" style="background:#6c5e16">12</i><i class="dk" style="background:#6c5e16">13</i><i class="dk" style="background:#6c5e16">14</i><i class="dk" style="background:#6c5e16">15</i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk" style="background:#135f68">16</i><i class="dk" style="background:#135f68">17</i><i class="dk" style="background:#135f68">18</i><i class="dk" style="background:#135f68">19</i><i class="dk" style="background:#135f68">20</i><i class="dk" style="background:#135f68">21</i><i class="dk" style="background:#135f68">22</i><i class="dk" style="background:#135f68">23</i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk" style="background:#681c5a">24</i><i class="dk" style="background:#681c5a">25</i><i class="dk" style="background:#681c5a">26</i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i style="background:#2cff52;box-shadow:0 0 7px #2cff52"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk" style="background:#1f1d24"></i><i class="dk rnd" style="background:#1f1d24"></i></div><div class="cap">Numbers are the effects in the order of the PUNCH FX list (0 = Clean). Shown with RETRIG as the PUNCH FX choice (bright) and the playhead on step 3. Colours approximate the Launchpad's palette.</div></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Pad</th><th>Does</th><th>Colour</th></tr></thead>
+    <tbody>
+      <tr><td>Rows 1–4</td><td>The 27 punch effects in order, Clean first: row 1 Clean · Retrig · Reverse · Pitch · Speed · Gate · Buzz · Crush; row 2 Repeat · Rev After · Tape Stop · Tape Start · Scratch · Env · Pan · Filter; row 3 Vowel · Tonal Delay · Freeze · Delay · Dist · Phaser · Verb · P-Shift; row 4 Ring Mod · Comb · Scatter. <b>Hold a pad to punch that effect, release to let go.</b> A held pad wins over B2.</td><td><span class="swq" style="background:#6e3612"></span><span class="swq" style="background:#6c5e16"></span><span class="swq" style="background:#135f68"></span><span class="swq" style="background:#681c5a"></span>dim, one tint per row · bright: the effect B2 punches (SETUP P4) · <span class="swq" style="background:#2cff52"></span>green: held</td></tr>
+      <tr><td>Rows 5–7</td><td>Unused.</td><td>off</td></tr>
+      <tr><td>Row 8</td><td>The loop's playhead, eight steps per pass, while a loop plays.</td><td><span class="swq" style="background:#2cff52"></span>green · <span class="swq" style="background:#2aeeff"></span>cyan in LIVE</td></tr>
+      <tr><td>Top 1</td><td>CAPTURE: grabs the last LENGTH steps, as a B1 hold does.</td><td><span class="swq" style="background:#ff2a1a"></span>red recording · <span class="swq" style="background:#ffe23a"></span>yellow armed · <span class="swq" style="background:#6e1c16"></span>dim red otherwise</td></tr>
+      <tr><td>Top 2</td><td>RE-ROLL: a new pattern, same loop.</td><td><span class="swq" style="background:#6c5e16"></span>dim yellow</td></tr>
+      <tr><td>Top 3</td><td>LIVE on / off.</td><td><span class="swq" style="background:#2aeeff"></span>cyan on · <span class="swq" style="background:#135f68"></span>dim off</td></tr>
+      <tr><td>Top 4</td><td>CLEAR: hold one second to drop the loop.</td><td><span class="swq" style="background:#ff2a1a"></span>red while held · <span class="swq" style="background:#6e1c16"></span>dim red</td></tr>
+      <tr><td>Top 5–8, right column</td><td>Unused.</td><td>off</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="h">Launch Control XL</h3>
+  <div class="sub">Factory template 1 · columns count from the left</div>
+  <div class="ctl" role="img" aria-label="Launch Control XL map for Smack: faders 1 to 6 are the PLAY knobs, top knobs 1 to 6 the SETUP knobs, upper buttons capture, re-roll, live and clear, lower buttons punch effects 1 to 8"><div class="xld"><span class="kn" style="border-color:#6c4e14"></span><span class="kn" style="border-color:#6c4e14"></span><span class="kn" style="border-color:#6c4e14"></span><span class="kn" style="border-color:#6c4e14"></span><span class="kn" style="border-color:#6c4e14"></span><span class="kn" style="border-color:#6c4e14"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="kn"></span><span class="fd on"></span><span class="fd on"></span><span class="fd on"></span><span class="fd on"></span><span class="fd on"></span><span class="fd on"></span><span class="fd"></span><span class="fd"></span><span class="bt lit" style="background:#6e1c16;color:#6e1c16"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#16702a;color:#16702a"></span><span class="bt lit" style="background:#6e1c16;color:#6e1c16"></span><span class="bt"></span><span class="bt"></span><span class="bt"></span><span class="bt"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="bt lit" style="background:#6c4e14;color:#6c4e14"></span><span class="n">1</span><span class="n">2</span><span class="n">3</span><span class="n">4</span><span class="n">5</span><span class="n">6</span><span class="n">7</span><span class="n">8</span></div><div class="cap">Three rows of knobs, eight faders, two rows of buttons under the faders. Lit = in use.</div></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Control</th><th>Does</th><th>LED</th></tr></thead>
+    <tbody>
+      <tr><td>Faders 1–6</td><td>The PLAY knobs: FX · ORDER · LENGTH · SLICE · BLEND · DJ FILTER.</td><td>—</td></tr>
+      <tr><td>Top knobs 1–6</td><td>The SETUP knobs: SEED · PITCH RANGE · CLOCK RATIO · PUNCH FX · MODE · TEMPO.</td><td><span class="swq" style="background:#6c4e14"></span>dim amber</td></tr>
+      <tr><td>Upper buttons 1–4</td><td>1 CAPTURE · 2 RE-ROLL · 3 LIVE on / off · 4 CLEAR (hold one second).</td><td>1 <span class="swq" style="background:#ff2a1a"></span>red recording, <span class="swq" style="background:#ffb020"></span>amber armed · 2 <span class="swq" style="background:#6c4e14"></span>dim amber · 3 <span class="swq" style="background:#2cff52"></span>green LIVE on · 4 <span class="swq" style="background:#ff2a1a"></span>red while held</td></tr>
+      <tr><td>Lower buttons 1–8</td><td>Hold to punch effects 1–8: Retrig · Reverse · Pitch · Speed · Gate · Buzz · Crush · Repeat.</td><td><span class="swq" style="background:#6c4e14"></span>dim amber · <span class="swq" style="background:#2cff52"></span>green while held</td></tr>
+      <tr><td>Faders 7–8, other knobs</td><td>Unused.</td><td>off</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 class="h">Haute42</h3>
+  <div class="sub">Every button is hold-to-punch</div>
+  <p style="margin-bottom:16px"><b>Hold a button and its effect plays; let go and it returns to dry.</b> The last
+    button pressed wins. Let it go while another is still held and that one takes over; with nothing held the sound is
+    dry again. The effects are Smack's own punch: every slice forced through that effect, the same as the Launchpad pads and B2. A held gamepad button wins over B2, and B1 goes white while any punch is held.</p>
+  <div class="ctl"><svg class="h42" viewBox="0 0 340 200" role="img" aria-label="Haute42 map for Smack: fourteen buttons, each holding one of Smack&#x27;s punch effects"><rect class="body" x="4" y="2" width="332" height="194" rx="12"/><text class="xtra" x="12" y="19">EXTRA</text><circle cx="40" cy="64" r="16" stroke="#5cff8a"/><text class="bl" x="40" y="64">Left</text><text class="fx" x="40" y="90">Gate</text><circle cx="80" cy="54" r="16" stroke="#3dd9d9"/><text class="bl" x="80" y="54">Down</text><text class="fx" x="80" y="80">Scratch</text><circle cx="120" cy="64" r="16" stroke="#ff5a5a"/><text class="bl" x="120" y="64">Right</text><text class="fx" x="120" y="90">Dist</text><circle cx="156" cy="160" r="16" stroke="#8fd6e8"/><text class="bl" x="156" y="160">Up</text><text class="fx" x="156" y="186">Verb</text><circle cx="188" cy="54" r="16" stroke="#ffb020"/><text class="bl" x="188" y="54">X</text><text class="fx" x="188" y="80">Retrig</text><circle cx="230" cy="46" r="16" stroke="#ffc86b"/><text class="bl" x="230" y="46">Y</text><text class="fx" x="230" y="72">Repeat</text><circle cx="272" cy="48" r="16" stroke="#38b6ff"/><text class="bl" x="272" y="48">RB</text><text class="fx" x="272" y="74">Reverse</text><circle cx="312" cy="58" r="16" stroke="#7fb8ff"/><text class="bl" x="312" y="58">LB</text><text class="fx" x="312" y="84">Tape Stop</text><circle cx="180" cy="114" r="16" stroke="#ff7a7a"/><text class="bl" x="180" y="114">A</text><text class="fx" x="180" y="140">Filter</text><circle cx="222" cy="106" r="16" stroke="#ff6a3d"/><text class="bl" x="222" y="106">B</text><text class="fx" x="222" y="132">Crush</text><circle cx="264" cy="108" r="16" stroke="#66d9c9"/><text class="bl" x="264" y="108">RT</text><text class="fx" x="264" y="134">Delay</text><circle cx="304" cy="118" r="16" stroke="#ffe38a"/><text class="bl" x="304" y="118">LT</text><text class="fx" x="304" y="144">Freeze</text><circle cx="110" cy="16" r="11" stroke="#ff4fd8"/><text class="bl" x="110" y="16">L3</text><text class="fx" x="110" y="37">Pitch</text><circle cx="156" cy="16" r="11" stroke="#d78bff"/><text class="bl" x="156" y="16">R3</text><text class="fx" x="156" y="37">Phaser</text></svg><div class="cap">Left hand: Left, Down, Right. Thumb: Up. Right hand: X Y RB LB on top, A B RT LT below. L3 and R3 are extra buttons; where they sit depends on the controller.</div></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Button</th><th>Where</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>X</td><td>right hand, top row, 1st</td><td><span class="swq" style="background:#ffb020"></span><b>Retrig</b></td></tr>
+      <tr><td>Y</td><td>right hand, top row, 2nd</td><td><span class="swq" style="background:#ffc86b"></span><b>Repeat</b></td></tr>
+      <tr><td>RB</td><td>right hand, top row, 3rd</td><td><span class="swq" style="background:#38b6ff"></span><b>Reverse</b></td></tr>
+      <tr><td>LB</td><td>right hand, top row, 4th</td><td><span class="swq" style="background:#7fb8ff"></span><b>Tape Stop</b></td></tr>
+      <tr><td>A</td><td>right hand, bottom row, 1st</td><td><span class="swq" style="background:#ff7a7a"></span><b>Filter</b></td></tr>
+      <tr><td>B</td><td>right hand, bottom row, 2nd</td><td><span class="swq" style="background:#ff6a3d"></span><b>Crush</b></td></tr>
+      <tr><td>RT</td><td>right hand, bottom row, 3rd</td><td><span class="swq" style="background:#66d9c9"></span><b>Delay</b></td></tr>
+      <tr><td>LT</td><td>right hand, bottom row, 4th</td><td><span class="swq" style="background:#ffe38a"></span><b>Freeze</b></td></tr>
+      <tr><td>Left</td><td>left hand, ring finger</td><td><span class="swq" style="background:#5cff8a"></span><b>Gate</b></td></tr>
+      <tr><td>Down</td><td>left hand, middle finger</td><td><span class="swq" style="background:#3dd9d9"></span><b>Scratch</b></td></tr>
+      <tr><td>Right</td><td>left hand, index finger</td><td><span class="swq" style="background:#ff5a5a"></span><b>Dist</b></td></tr>
+      <tr><td>Up</td><td>thumb</td><td><span class="swq" style="background:#8fd6e8"></span><b>Verb</b></td></tr>
+      <tr><td>L3</td><td>extra button</td><td><span class="swq" style="background:#ff4fd8"></span><b>Pitch</b></td></tr>
+      <tr><td>R3</td><td>extra button</td><td><span class="swq" style="background:#d78bff"></span><b>Phaser</b></td></tr>
+    </tbody>
+  </table></div>
+  <p style="margin-top:18px">These are the engine's own effects, described in <a href="#pattern">the effects table</a>. The Launchpad reaches all 27; the gamepad picks fourteen to play by hand.</p>
+  <div class="note">
+    <h3>Button positions</h3>
+    <p>The positions here follow the standard GP2040-CE hitbox mapping. If the controller's button mapping has been
+      changed, the same effects follow the XInput button names (X, Y, RB, LB, A, B, RT, LT, the directions, L3, R3),
+      not the physical positions. Start, Back and Guide do nothing.</p>
+  </div>
+</div></section>
+
 <section id="build"><div class="wrap">
   <h2 class="sh">Build it</h2>
-  <div class="sub">10 — No release yet; the source is the download</div>
+  <div class="sub">11 — No release yet; the source is the download</div>
   <p class="lede">There is no packaged release of v0.1.0 yet: it has been played on one module,
     and the clock and CV inputs are still untried. Building takes a few minutes with the ARM
     toolchain installed.</p>
@@ -693,7 +866,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
 
 <section id="install"><div class="wrap">
   <h2 class="sh">Installing</h2>
-  <div class="sub">11 — Through the front USB-C, and getting back to stock</div>
+  <div class="sub">12 — Through the front USB-C, and getting back to stock</div>
   <p class="lede">The Alchemy Lab's bootloader serves DFU on the front-panel USB-C, so the module
     stays in the rack. Once this firmware is on it, so does every update after.</p>
   <div class="cols">
@@ -727,7 +900,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
 
 <section id="built"><div class="wrap">
   <h2 class="sh">How it is built</h2>
-  <div class="sub">12 — The parts worth knowing about</div>
+  <div class="sub">13 — The parts worth knowing about</div>
   <p class="lede">The engine was not touched. Everything below is the layer between it and the
     Alchemy SDK, and the handful of decisions that shaped that layer.</p>
   <div class="tablewrap"><table>
@@ -765,7 +938,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
 
 <section id="family"><div class="wrap">
   <h2 class="sh">The rest of them</h2>
-  <div class="sub">13 — The same engine, and its siblings</div>
+  <div class="sub">14 — The same engine, and its siblings</div>
   <p class="lede">Smack started on the Ableton Move under
     <a href="https://github.com/charlesvestal/schwung">Schwung</a>. The Versio port came next; this
     is the third body for the same engine.</p>
