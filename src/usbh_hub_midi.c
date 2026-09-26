@@ -69,7 +69,7 @@ typedef struct
     uint8_t  kind;     /* HUBMIDI_KIND_* */
     uint8_t  interval; /* interrupt IN poll period, ms (XInput) */
     uint32_t armed_ms; /* when the interrupt IN was last armed */
-    uint32_t arms, dones, naks, errs;
+    uint32_t arms, dones, naks, errs, stale;
     uint8_t  led;      /* XInput: the player-LED command is still to send */
 } Dev;
 
@@ -272,6 +272,15 @@ static void rx_step(USBH_HandleTypeDef *ph, int i)
         if (u == USBH_URB_NOTREADY) d->naks++;
         else d->errs++;
         d->rx = RX_ARM; /* re-arm; an unplug surfaces as a disconnect */
+    }
+    else if (d->kind == HUBMIDI_KIND_XINPUT && HAL_GetTick() - d->armed_ms >= 8u)
+    {
+        /* Still pending: seen 2026-09-25, the pad's first report arrived and
+         * the next transfer never finished, whatever was pressed. ST's HID
+         * class re-submits every poll period whatever the URB says; so do
+         * we, a little slower than the pad's own period. */
+        d->stale++;
+        d->rx = RX_ARM;
     }
 }
 
@@ -644,6 +653,7 @@ HUBMIDI_Info HUBMIDI_GetInfo(void)
         i.rx_done[d]  = H.dev[d].dones;
         i.rx_nak[d]   = H.dev[d].naks;
         i.rx_err[d]   = H.dev[d].errs;
+        i.rx_stale[d] = H.dev[d].stale;
     }
     return i;
 }

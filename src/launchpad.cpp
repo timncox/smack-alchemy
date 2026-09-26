@@ -391,10 +391,11 @@ int Report(char* b, int cap)
             (int)via_hub(), h.state, h.ports, h.port, h.port_status, h.fail_state, h.fail_code,
             h.skipped, h.done);
         for (int d = 0; d < HUBMIDI_MAX_DEVICES; d++)
-            OUT("  slot %d: port %u %04x:%04x kind %u rx armed %lu data %lu nak %lu err %lu\n", d,
+            OUT("  slot %d: port %u %04x:%04x kind %u rx armed %lu data %lu nak %lu err %lu stale %lu\n", d,
                 h.dev_port[d], h.dev_vid[d], h.dev_pid[d], h.dev_kind[d],
                 (unsigned long)h.rx_arms[d], (unsigned long)h.rx_done[d],
-                (unsigned long)h.rx_nak[d], (unsigned long)h.rx_err[d]);
+                (unsigned long)h.rx_nak[d], (unsigned long)h.rx_err[d],
+                (unsigned long)h.rx_stale[d]);
     }
     OUT("pad: reports %lu, held %05lx, last %02x %02x %02x %02x %02x %02x\n",
         (unsigned long)g_pad_reports, (unsigned long)g_pad_buttons, g_pad_last[0], g_pad_last[1],

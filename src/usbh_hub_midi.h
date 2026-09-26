@@ -85,6 +85,7 @@ typedef struct
      * (interrupt: nothing to say), failed (error / stall) */
     uint32_t rx_arms[HUBMIDI_MAX_DEVICES], rx_done[HUBMIDI_MAX_DEVICES];
     uint32_t rx_nak[HUBMIDI_MAX_DEVICES], rx_err[HUBMIDI_MAX_DEVICES];
+    uint32_t rx_stale[HUBMIDI_MAX_DEVICES]; /* XInput: re-armed while still pending */
 } HUBMIDI_Info;
 HUBMIDI_Info HUBMIDI_GetInfo(void);
 
