@@ -83,3 +83,5 @@ here, not there.
 ## License
 
 MIT (this firmware). The vendored engine is Tim Cox's; see the file headers.
+
+`src/usbd_ctlreq_uac.c` is STMicroelectronics' `usbd_ctlreq.c` from the STM32 USB Device Library (as shipped in libDaisy), changed only to allow three interfaces; it stays under ST's license, in `src/LICENSE-ST-USB.md`.

@@ -868,11 +868,16 @@ footer p{max-width:70ch}
 </div></section>
 
 <section id="build"><div class="wrap">
-  <h2 class="sh">Build it</h2>
-  <div class="sub">11 — No release yet; the source is the download</div>
-  <p class="lede">There is no packaged release of v0.1.0 yet: it has been played on one module,
-    and the clock and CV inputs are still untried. Building takes a few minutes with the ARM
-    toolchain installed.</p>
+  <h2 class="sh">Download it</h2>
+  <div class="sub">11 — The firmware file, or the source</div>
+  <p class="lede">For the <b>Alchemy Lab V2</b> only. This is a beta: it has been played on one module, and the clock and CV inputs are still untried.</p>
+  <p><a href="#" data-repo="/releases/latest/download/smack_alchemy.bin" style="display:inline-block;padding:10px 18px;border:1.5px solid var(--acc);color:var(--acc);border-radius:6px;font-weight:600;text-decoration:none">Download smack_alchemy.bin</a>&nbsp; <a href="#" data-repo="/releases">All releases and notes</a></p>
+  <ul>
+    <li>Install it through the front USB-C as below. To switch firmware from the card, also get <a href="https://timncox.github.io/mark-alchemy/">Mark</a> and <a href="https://timncox.github.io/belt-alchemy/">Belt</a>, and put all three <code>.bin</code> files in <code>/alchemy</code> on the microSD card.</li>
+    <li>Smack keeps its working state in <b>preset slot 12</b>. If you saved something in that slot with another firmware, it is overwritten the first time Smack saves. Move it to another slot first.</li>
+    <li>Custom firmware: Hermetic Modular did not write or test it, so please report problems here with <a href="#" data-repo="/issues">an issue</a>, not to them.</li>
+  </ul>
+  <p>To build it yourself instead (a few minutes with the ARM toolchain installed):</p>
   <pre>git clone --recurse-submodules <i data-repo-text></i>
 cd smack-alchemy
 make libdaisy        <b># once</b>
