@@ -69,6 +69,7 @@ typedef struct
     uint8_t  kind;     /* HUBMIDI_KIND_* */
     uint8_t  interval; /* interrupt IN poll period, ms (XInput) */
     uint32_t armed_ms; /* when the interrupt IN was last armed */
+    uint32_t arms, dones, naks, errs;
 } Dev;
 
 typedef struct
@@ -236,6 +237,7 @@ static void rx_step(USBH_HandleTypeDef *ph, int i)
         }
         else
             USBH_BulkReceiveData(ph, s_rx[i], d->in_size, d->in_pipe);
+        d->arms++;
         d->rx = RX_POLL;
         return;
     }
@@ -243,12 +245,17 @@ static void rx_step(USBH_HandleTypeDef *ph, int i)
     if (u == USBH_URB_DONE)
     {
         const uint32_t n = USBH_LL_GetLastXferSize(ph, d->in_pipe);
+        d->dones++;
         d->rx = RX_ARM;
         if (s_cb) s_cb((uint8_t)i, s_rx[i], n, s_user);
     }
     else if (u == USBH_URB_ERROR || u == USBH_URB_STALL
              || (u == USBH_URB_NOTREADY && d->kind == HUBMIDI_KIND_XINPUT))
+    {
+        if (u == USBH_URB_NOTREADY) d->naks++;
+        else d->errs++;
         d->rx = RX_ARM; /* re-arm; an unplug surfaces as a disconnect */
+    }
 }
 
 /* ---------------------------------------------------------------- class */
@@ -604,6 +611,11 @@ HUBMIDI_Info HUBMIDI_GetInfo(void)
         i.dev_vid[d]  = H.dev[d].vid;
         i.dev_pid[d]  = H.dev[d].pid;
         i.dev_port[d] = H.dev[d].ready ? H.dev[d].port : 0;
+        i.dev_kind[d] = H.dev[d].kind;
+        i.rx_arms[d]  = H.dev[d].arms;
+        i.rx_done[d]  = H.dev[d].dones;
+        i.rx_nak[d]   = H.dev[d].naks;
+        i.rx_err[d]   = H.dev[d].errs;
     }
     return i;
 }

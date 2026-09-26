@@ -715,9 +715,11 @@ static bool g_lpdiag_done = false;
 
 static void lp_write_report(uint32_t now)
 {
-    if (g_lpdiag_done || g_lp_stage < 2 || now - g_lp_boot_ms < 17000u) return;
-    if (lp::Connected()) { g_lpdiag_done = true; return; }
+    /* 17 s after boot, then every 10 s: the gamepad counters keep moving. */
+    static uint32_t next = 17000u;
+    if (g_lp_stage < 2 || now - g_lp_boot_ms < next) return;
     if (picker::Busy() || !sd.EnsureMounted(now)) return;
+    next = now - g_lp_boot_ms + 10000u;
     g_lpdiag_done = true;
     const int n = lp::Report(s_lpdiag_buf, (int)sizeof s_lpdiag_buf);
     if (f_open(&s_lpdiag_fil, "/lpdiag.txt", FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return;
@@ -1102,6 +1104,7 @@ static void OnRender(uint32_t t_ms)
             {0x40, 0x00, 0x40}, {0x00, 0x00, 0xFF}, {0x00, 0xC0, 0xC0},
             {0xFF, 0xC0, 0x00}, {0xFF, 0x00, 0x00}, {0x00, 0xFF, 0x00}};
         if (g_lp_stage < 5) ck = kStage[g_lp_stage];   /* running: B2 is B2 again */
+        if (pad::Buttons()) ck = {0xFF, 0xFF, 0xFF};   /* a gamepad button held */
     }
     if (g_usb_audio)
     {

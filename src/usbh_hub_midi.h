@@ -80,6 +80,11 @@ typedef struct
     uint16_t done;         /* ports carrying a configured device */
     uint16_t dev_vid[HUBMIDI_MAX_DEVICES], dev_pid[HUBMIDI_MAX_DEVICES];
     uint8_t  dev_port[HUBMIDI_MAX_DEVICES]; /* 0 = slot empty */
+    uint8_t  dev_kind[HUBMIDI_MAX_DEVICES];
+    /* receive side per slot: transfers armed, completed with data, NAKed
+     * (interrupt: nothing to say), failed (error / stall) */
+    uint32_t rx_arms[HUBMIDI_MAX_DEVICES], rx_done[HUBMIDI_MAX_DEVICES];
+    uint32_t rx_nak[HUBMIDI_MAX_DEVICES], rx_err[HUBMIDI_MAX_DEVICES];
 } HUBMIDI_Info;
 HUBMIDI_Info HUBMIDI_GetInfo(void);
 
