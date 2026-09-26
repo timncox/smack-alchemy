@@ -70,6 +70,7 @@ typedef struct
     uint8_t  interval; /* interrupt IN poll period, ms (XInput) */
     uint32_t armed_ms; /* when the interrupt IN was last armed */
     uint32_t arms, dones, naks, errs;
+    uint8_t  led;      /* XInput: the player-LED command is still to send */
 } Dev;
 
 typedef struct
@@ -102,6 +103,7 @@ static void              *s_user;
 /* Control-transfer data and the MIDI receive buffers: DMA-reachable. */
 static uint8_t DMA_SECTION s_ctl[512];
 static uint8_t DMA_SECTION s_rx[HUBMIDI_MAX_DEVICES][64];
+static uint8_t DMA_SECTION s_led[HUBMIDI_MAX_DEVICES][4];
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -183,13 +185,20 @@ static int parse_cfg(const uint8_t *c, uint16_t total)
             midi = (c[i + 5] == 0x01 && c[i + 6] == 0x03);
             pad  = (c[i + 5] == 0xFF && c[i + 6] == 0x5D && c[i + 7] == 0x01);
         }
-        else if (type == 0x05 && len >= 7 && pad && (c[i + 3] & 0x03) == 0x03
-                 && (c[i + 2] & 0x80U) && !H.e_in_ep)
+        else if (type == 0x05 && len >= 7 && pad && (c[i + 3] & 0x03) == 0x03)
         {
-            H.e_in_ep    = c[i + 2];
-            H.e_in_size  = le16(&c[i + 4]) & 0x03FFU;
-            H.e_interval = c[i + 6] ? c[i + 6] : 1;
-            H.e_kind     = HUBMIDI_KIND_XINPUT;
+            if ((c[i + 2] & 0x80U) && !H.e_in_ep)
+            {
+                H.e_in_ep    = c[i + 2];
+                H.e_in_size  = le16(&c[i + 4]) & 0x03FFU;
+                H.e_interval = c[i + 6] ? c[i + 6] : 1;
+                H.e_kind     = HUBMIDI_KIND_XINPUT;
+            }
+            else if (!(c[i + 2] & 0x80U) && !H.e_out_ep)
+            {
+                H.e_out_ep   = c[i + 2];
+                H.e_out_size = le16(&c[i + 4]) & 0x03FFU;
+            }
         }
         else if (type == 0x05 && len >= 7 && midi && (c[i + 3] & 0x03) == 0x02)
         {
@@ -224,6 +233,14 @@ static void rx_step(USBH_HandleTypeDef *ph, int i)
 {
     Dev *d = &H.dev[i];
     if (!d->ready) return;
+    if (d->led)
+    {
+        d->led       = 0;
+        s_led[i][0]  = 0x01; /* LED command */
+        s_led[i][1]  = 0x03; /* length */
+        s_led[i][2]  = 0x06; /* player 1 on */
+        USBH_InterruptSendData(ph, s_led[i], 3, d->out_pipe);
+    }
     if (d->rx == RX_ARM)
     {
         if (d->kind == HUBMIDI_KIND_XINPUT)
@@ -485,7 +502,18 @@ static void enum_step(USBH_HandleTypeDef *ph, uint32_t now)
                               d->kind == HUBMIDI_KIND_XINPUT ? USBH_EP_INTERRUPT : USBH_EP_BULK,
                               d->in_size);
                 USBH_LL_SetToggle(ph, d->in_pipe, 0U);
-                if (d->kind == HUBMIDI_KIND_MIDI)
+                if (d->kind == HUBMIDI_KIND_XINPUT && d->out_ep)
+                {
+                    /* Like Linux's xpad: set the player LED once configured.
+                     * Some XInput pads stay quiet until the host sends
+                     * something; this is the command every host sends. */
+                    d->out_pipe = USBH_AllocPipe(ph, d->out_ep);
+                    USBH_OpenPipe(ph, d->out_pipe, d->out_ep, d->addr, ph->device.speed,
+                                  USBH_EP_INTERRUPT, d->out_size);
+                    USBH_LL_SetToggle(ph, d->out_pipe, 0U);
+                    d->led = 1;
+                }
+                else if (d->kind == HUBMIDI_KIND_MIDI)
                 {
                     d->out_pipe = USBH_AllocPipe(ph, d->out_ep);
                     USBH_OpenPipe(ph, d->out_pipe, d->out_ep, d->addr, ph->device.speed,
