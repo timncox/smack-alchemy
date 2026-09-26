@@ -728,6 +728,24 @@ static void lp_write_report(uint32_t now)
     f_close(&s_lpdiag_fil);
 }
 
+/* Buttons still down when Settings closed: ignored until they are let go.
+ * The SDK closes Settings on the B2 or B3 press itself, and this poll sees
+ * that same press a moment later; without this the press that leaves
+ * Settings would also count as a press here. */
+static uint8_t g_btn_swallow = 0;
+
+static bool btn_live(uint8_t b)
+{
+    const bool    down = hw.buttons[b].Pressed();
+    const uint8_t bit  = (uint8_t)(1u << b);
+    if (g_btn_swallow & bit)
+    {
+        if (down) return false;
+        g_btn_swallow = (uint8_t)(g_btn_swallow & ~bit);
+    }
+    return down;
+}
+
 static void OnPoll(uint32_t now)
 {
     if (g_usb_audio && UAC_RebootRequested())
@@ -759,12 +777,13 @@ static void OnPoll(uint32_t now)
         btn_down    = false;
         btn_cleared = false;
         btn_tap_n   = 0;
+        g_btn_swallow = (uint8_t)((1u << kButtonB1) | (1u << kButtonB2) | (1u << kButtonB3));
         return;
     }
 
-    set_punch(hw.buttons[kButtonB2].Pressed());
+    set_punch(btn_live(kButtonB2));
 
-    const bool pressed = hw.buttons[kButtonB1].Pressed();
+    const bool pressed = btn_live(kButtonB1);
     if (pressed && !btn_down)
     {
         btn_down    = true;
