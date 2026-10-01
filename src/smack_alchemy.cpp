@@ -58,6 +58,8 @@
 #include "extras.h"
 #include "picker.h"
 #include "launchpad.h"
+#include "readout.h"
+#include "screen.h"
 #include "usb_shared.h"
 #include "usb_audio.h"
 #include "ff.h"
@@ -746,8 +748,75 @@ static bool btn_live(uint8_t b)
     return down;
 }
 
+/* ---- 1U OLED (optional, on the rear header) ---------------------------------
+ *
+ * Turn a knob and the screen names it and says its value in words for 2.5 s
+ * ("PUNCH FX / Tape Stop"); otherwise it shows the page and tempo over what
+ * Smack is doing: the effect being punched, or Pattern / Armed / Capturing /
+ * Loop (LIVE). Wiring and the boot test card: screen.h, oled_ssd1305.h. */
+
+static VirtualKnob* const kPageKnobs[kNumAppPages][kNumPots] = {
+    {&fx, &order, &length, &slice, &blend, &djf},
+    {&seed, &pitch, &ratio, &punch, &mode, &tempo},
+};
+
+static void screen_poll(uint32_t now)
+{
+    static float    last[kNumPots];
+    static bool     primed     = false;
+    static int      touched    = -1;
+    static uint32_t touched_ms = 0u;
+
+    /* A pot counts as touched once it moves 1 % from where it last settled,
+     * so slow turns still register and ADC noise doesn't. */
+    const float* phys = loop.Phys();
+    for (int p = 0; p < kNumPots; p++)
+    {
+        if (!primed) last[p] = phys[p];
+        else if (fabsf(phys[p] - last[p]) > 0.01f)
+        {
+            last[p]    = phys[p];
+            touched    = p;
+            touched_ms = now;
+        }
+    }
+    primed = true;
+
+    char small[24], big[16];
+    if (settings.IsActive())
+    {
+        screen::Show("SETTINGS", "B2/B3 exit");
+    }
+    else if (touched >= 0 && now - touched_ms < 2500u)
+    {
+        const VirtualKnob* k = nullptr;
+        for (VirtualKnob* c : kPageKnobs[pager.Page() == kPageSetup ? 1 : 0])
+            if (c->Pot() == touched) k = c;
+        if (!k) return;
+        ro_upper(small, sizeof small, k->Name());
+        ro_value(big, sizeof big, k->Value(), (ro_xform_t)k->Transform(), k->XformMin(),
+                 k->XformMax(), k->Unit(), k->Labels(), k->NumLabels());
+        screen::Show(small, big);
+    }
+    else
+    {
+        char bpm[12];
+        ro_value(bpm, sizeof bpm, clk_bpm(&CLK), RO_LINEAR, 50.f, 200.f, "BPM", nullptr, 0);
+        snprintf(small, sizeof small, "%s  %s", pager.Page() == kPageSetup ? "SETUP" : "PLAY", bpm);
+        const char* what = "Pattern";
+        if (g_punch_sent >= 0 && g_punch_sent < SMACK_FX_COUNT) what = kPunchLabels[g_punch_sent];
+        else if (G_RUN_STATE == SMACK_LOOPING) what = G_LIVE ? "Loop LIVE" : "Loop";
+        else if (G_RUN_STATE == SMACK_RECORDING) what = "Capturing";
+        else if (G_RUN_STATE == SMACK_ARMED) what = "Armed";
+        screen::Show(small, what);
+    }
+}
+
 static void OnPoll(uint32_t now)
 {
+    screen_poll(now);
+    screen::Poll(now);
+
     if (g_usb_audio && UAC_RebootRequested())
     {
         static uint32_t asked = 0u;
@@ -1265,6 +1334,7 @@ static void fault_forever(void)
 int main(void)
 {
     hw.Init(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ, kBlockSize);
+    screen::Init("SMACK"); /* optional 1U OLED; harmless with nothing attached */
     cpu.Init(hw.SampleRate(), (int)hw.BlockSize());
     versio_alloc_init(g_pool, VERSIO_POOL_BYTES);
     clock_calibrate();

@@ -33,6 +33,7 @@ CPP_SOURCES = \
     src/smack_alchemy.cpp \
     src/picker.cpp \
     src/launchpad.cpp \
+    src/screen.cpp \
     src/usb_shared.cpp
 
 # smack_core_alchemy.c #includes vendor/smack_core.c with calloc/free
@@ -42,6 +43,7 @@ C_SOURCES = \
     src/clock_adapter.c \
     src/versio_alloc.c \
     src/smack_core_alchemy.c \
+    src/readout.c \
     src/usbh_hub_midi.c \
     src/usb_audio.c \
     src/usbd_ctlreq_uac.c
