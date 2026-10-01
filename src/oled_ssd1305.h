@@ -17,6 +17,13 @@
  * config below moves reset to PB6 (pin 8). Transmit-only: with nothing on the
  * header it just clocks into the air, so it is safe to leave on.
  *
+ * "Pin" numbers are Hermetic's SDK drawing positions, not IDC odd/even
+ * contacts (hermeticmodular.com/docs/hardware#expansion-header). Board-side,
+ * marked end at left, Seed below: the top row is 1..10 left to right, so the
+ * whole display (GND 2, SCK 3, MOSI 4, CS 6, RESET 8, DC 9) is on the top
+ * row. Position 1 (top) is -12 V and 11 (below it) is +12 V. Never power the
+ * display from 15 (3V3A); give it its own 3.3 V.
+ *
  * Shared by copy across the Alchemy family.
  */
 #pragma once
