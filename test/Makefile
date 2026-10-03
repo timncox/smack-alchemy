@@ -2,9 +2,10 @@
 #
 #   make -C test        (or `make test` from the repo root)
 #
-# Carried over from smack-versio unchanged: the clock adapter, the SDRAM
-# bump allocator (linked through the same wrapper unit the firmware builds),
-# the DJ filter's measured frequency response, and the ring-stall regression.
+# Carried over from smack-versio: the clock adapter, the SDRAM bump allocator
+# (linked through the same wrapper unit the firmware builds), the DJ filter's
+# measured frequency response, and the ring-stall regression. All unchanged
+# except the DJ filter, which resonates here (2026-10-02) and not on Versio.
 # The engine's own suite lives upstream in ~/tim-os/smack (`make test`).
 #
 # The tests include "../clock_adapter.h" etc. relative to smack-versio's

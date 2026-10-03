@@ -16,8 +16,18 @@
  * stability condition brings in the resonance term as well. This filter is
  * required to sweep to 18 kHz at 48 kHz and come back, which is right in that
  * territory. Zavalishin's topology-preserving transform is unconditionally
- * stable at any cutoff, so the tuning problem simply does not exist. Two
- * cascaded one-poles give 12 dB/octave, which is the slope a DJ mixer uses.
+ * stable at any cutoff and any damping, so the tuning problem simply does not
+ * exist. It is a two-pole filter: 12 dB/octave, the slope a DJ mixer uses.
+ *
+ * RESONANCE, AND WHY IT FADES IN
+ * ------------------------------
+ * The first version was two cascaded one-poles, which is this filter with its
+ * Q stuck at 0.5: no peak at the corner at all. Asked for a bit more bite, the
+ * Q now rises with knob travel, from 0.5 at the centre to DJ_RES_Q at the
+ * ends. Fixed resonance would put a bump at 18 kHz on an "open" lowpass and a
+ * sub-bass bump at 15 Hz on an "open" highpass -- the centre would stop being
+ * clean. Fading it in means the notch, and everything the next two sections
+ * say about it, is exactly what it was.
  *
  * WHY THE CURVES MEET AT ZERO
  * ---------------------------
@@ -66,12 +76,19 @@
 #define DJ_HP_OPEN   0.00098f /* highpass fully open  ~15 Hz */
 #define DJ_HP_RATIO  422.0f   /* ... times this at full sweep -> ~6 kHz */
 
+/* Q at full travel either way; 0.5 (the centre's Q) would be no resonance.
+ * 1.5 peaks about +4 dB at the corner: audible bite, nowhere near
+ * self-oscillation. DJ_RES_CURVE is how fast it arrives: Q is fully up by
+ * this much knob travel. */
+#define DJ_RES_Q     1.5f
+#define DJ_RES_CURVE 0.5f
+
 /* One smoothing step per block. ~0.08 at 375 Hz spreads a control step over
  * roughly 30 ms, which is what keeps a 50 Hz knob read from zippering. */
 #define DJ_SMOOTH    0.08f
 
 typedef struct {
-    float s[2][2]; /* [channel][stage] integrator state */
+    float s[2][2]; /* [channel][0 lowpass, 1 bandpass] integrator state */
     float c;       /* smoothed control, -1..+1 */
     int   hp;      /* which mode the state currently means; see the header */
 } dj_filter_t;
@@ -89,6 +106,15 @@ static inline float dj_filter_g(float ctl)
 {
     if (ctl > 0.0f) return DJ_HP_OPEN * powf(DJ_HP_RATIO,  ctl);
     return DJ_LP_OPEN * powf(DJ_LP_RATIO, -ctl);
+}
+
+/* Q for a control position: 0.5 at the centre, DJ_RES_Q from DJ_RES_CURVE of
+ * travel on. */
+static inline float dj_filter_q(float ctl)
+{
+    float t = (ctl < 0.0f ? -ctl : ctl) * (1.0f / DJ_RES_CURVE);
+    if (t > 1.0f) t = 1.0f;
+    return 0.5f + (DJ_RES_Q - 0.5f) * t;
 }
 
 /*
@@ -116,7 +142,10 @@ static inline void dj_filter_block(dj_filter_t *f, float *io, int samples,
     {
         const int   hp = f->c > 0.0f;
         const float g  = dj_filter_g(f->c);
-        const float G  = g / (1.0f + g);
+        const float kd = 1.0f / dj_filter_q(f->c); /* damping, 1/Q */
+        const float a1 = 1.0f / (1.0f + g * (g + kd));
+        const float a2 = g * a1;
+        const float a3 = g * a2;
 
         /* Crossing the centre changes what the state MEANS. Carrying it over
          * is the 2.4x thump described in the header. */
@@ -126,15 +155,14 @@ static inline void dj_filter_block(dj_filter_t *f, float *io, int samples,
         }
 
         for (i = 0; i < samples; i++) {
-            float  x  = io[i];
-            float *st = f->s[i & 1]; /* interleaved: even L, odd R */
-            for (k = 0; k < 2; k++) {
-                float v = (x - st[k]) * G;
-                float y = v + st[k];
-                st[k]   = y + v;
-                x       = hp ? (x - y) : y; /* highpass = input minus lowpass */
-            }
-            io[i] = x;
+            const float x  = io[i];
+            float      *st = f->s[i & 1]; /* interleaved: even L, odd R */
+            const float v3 = x - st[0];
+            const float v1 = a1 * st[1] + a2 * v3;   /* bandpass */
+            const float v2 = st[0] + a2 * st[1] + a3 * v3; /* lowpass */
+            st[1] = 2.0f * v1 - st[1];
+            st[0] = 2.0f * v2 - st[0];
+            io[i] = hp ? (x - kd * v1 - v2) : v2;
         }
     }
 

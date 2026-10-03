@@ -147,15 +147,55 @@ static void test_the_sweep_goes_the_right_way(void)
            db(hp_kills_low), db(hp_keeps_high));
 
     assert(db(lp_kills_high) < -25.0); /* 1 kHz is >4 octaves past a 40 Hz corner */
-    assert(db(lp_keeps_low)  >  -8.0); /* at the corner, two poles: about -6 dB */
+    assert(db(lp_keeps_low)  >  -8.0); /* at the corner: +3.5 dB, it resonates */
     assert(db(hp_kills_low)  < -25.0);
     assert(db(hp_keeps_high) >  -8.0);
 
-    /* And the sweep is progressive, not a switch at the end of travel. */
-    assert(db(response(-0.5f, 1000.0, 0, NULL)) < -1.0);
-    assert(db(response(-0.5f, 1000.0, 0, NULL)) > db(lp_kills_high));
+    /* And the sweep is progressive, not a switch at the end of travel. Half
+     * travel puts the corner near 600 Hz; 3 kHz is well past it (1 kHz is
+     * not -- the resonant peak lifts the octave just above the corner). */
+    assert(db(response(-0.5f, 3000.0, 0, NULL)) < -1.0);
+    assert(db(response(-0.5f, 3000.0, 0, NULL)) > db(response(-1.0f, 3000.0, 0, NULL)));
 
     printf("ok: left sweeps a lowpass down, right sweeps a highpass up\n");
+}
+
+/* The steady-state level of a sine at the filter's own corner. */
+static double at_corner(float ctl)
+{
+    return response(ctl, g_to_hz(dj_filter_g(ctl)), 0, NULL);
+}
+
+/* Worst-case gain anywhere in the response for a given Q: a two-pole's peak
+ * is Q / sqrt(1 - 1/(4Q^2)) once Q passes 0.707, and unity below. */
+static double peak_gain(double q)
+{
+    return q > 0.7072 ? q / sqrt(1.0 - 1.0 / (4.0 * q * q)) : 1.0;
+}
+
+/*
+ * It resonates where it should and nowhere else.
+ *
+ * At the corner a two-pole's gain is exactly Q, so the corner level IS the
+ * resonance. Swept: ~+3.5 dB (Q 1.5). Near the centre: -6 dB (Q 0.5), the
+ * same as the old non-resonant cascade -- which is what keeps the open ends
+ * free of a bump at 18 kHz or 15 Hz.
+ */
+static void test_it_resonates_when_swept_and_not_when_open(void)
+{
+    double lp = at_corner(-0.8f), hp = at_corner(0.8f);
+    double lp_open = at_corner(-0.02f), hp_open = at_corner(0.02f);
+
+    printf("   at the corner: LP swept %+.1f dB, HP swept %+.1f dB\n", db(lp), db(hp));
+    printf("   near centre:   LP %+.1f dB, HP %+.1f dB\n", db(lp_open), db(hp_open));
+
+    assert(db(lp) > 2.0 && db(lp) < 6.0);
+    assert(db(hp) > 2.0 && db(hp) < 6.0);
+    assert(db(lp_open) < -4.0); /* barely any Q yet */
+    assert(db(hp_open) < -4.0);
+    assert(fabs(dj_filter_q(0.0f) - 0.5f) < 1e-6f);
+
+    printf("ok: resonance comes in with the sweep and stays out of the notch\n");
 }
 
 /* Two lanes hard-panned in DUAL mode is a headline feature; a filter that
@@ -203,11 +243,12 @@ static void test_a_hard_sweep_stays_bounded(void)
         }
     }
 
-    printf("   worst sample over a hard two-cycle sweep: %.3f\n", peak);
-    /* There is no resonance in this topology, so the only way past unity is a
-     * state discontinuity. The bound is tight on purpose: at 2.0 this passed
-     * while the filter was overshooting to 2.37 at every centre crossing. */
-    assert(peak < 1.2);
+    printf("   worst sample over a hard two-cycle sweep: %.3f (resonant peak %.3f)\n",
+           peak, peak_gain(DJ_RES_Q));
+    /* The resonant peak is the only legitimate way past unity; anything more
+     * is a state discontinuity. The bound is tight on purpose: at 2.0x this
+     * passed while the filter was overshooting to 2.37 at every crossing. */
+    assert(peak < 1.2 * peak_gain(DJ_RES_Q));
     printf("ok: sweeping hard stays finite and does not gain up\n");
 }
 
@@ -256,7 +297,8 @@ static void test_crossing_the_centre_is_silent(void)
 
     printf("   %d centre crossings, worst sample %.3f\n", crossings, peak);
     assert(crossings >= 2); /* the test has to actually cross, or it proves nothing */
-    assert(peak < 1.1);     /* input was full scale; anything above is the thump */
+    /* input was full scale; above the resonant peak at 0.4 travel is the thump */
+    assert(peak < 1.1 * peak_gain(dj_filter_q(0.4f)));
 
     printf("ok: sweeping through the centre does not thump\n");
 }
@@ -292,6 +334,7 @@ int main(void)
     test_endpoints_are_the_advertised_frequencies();
     test_centre_is_transparent();
     test_the_sweep_goes_the_right_way();
+    test_it_resonates_when_swept_and_not_when_open();
     test_channels_are_independent();
     test_a_hard_sweep_stays_bounded();
     test_crossing_the_centre_is_silent();

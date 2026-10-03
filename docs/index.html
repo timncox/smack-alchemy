@@ -494,6 +494,9 @@ h4.setglance{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-tr
       Measured natively on the same filter code: −56 dB at 1 kHz fully left, −72 dB at 100 Hz
       fully right. At exactly zero the block is skipped altogether rather than run "open",
       because even open the filter shaved half a decibel off 8 kHz.</p>
+    <p>It resonates a little: the further you sweep, the more it peaks at the cutoff, up to
+      about +3.5 dB at full travel. That is bite, not squeal; it never self-oscillates. Near the
+      notch it is as flat as ever, so an open filter still sounds like no filter.</p>
     <p>On the Versio this filter had to share a knob with PITCH RANGE. Here each has its own.</p>
   </div>
 </div></section>
@@ -991,7 +994,7 @@ make test            <b># the native suites: clock, allocator, DJ filter, ring s
       <tr><td>Ring recorder</td><td>150 seconds, sized to hold <em>two</em> of the longest loop, so the loop that is playing is protected from the recorder.</td></tr>
       <tr><td>SDRAM allocator</td><td>A bump pool in external RAM, 27.6 MB of 32 MB, so the engine's four <code>calloc</code>s land there with no engine edits.</td></tr>
       <tr><td>Engine at 48 kHz</td><td>128-frame blocks, as the engine's clock regression requires; the SDK's default block is 24, so the firmware asks for 128 at init.</td></tr>
-      <tr><td>DJ filter</td><td>Two cascaded one-poles per channel, and a true bypass at the notch: at exactly zero the block is skipped and the filter state cleared, so re-engaging starts from silence.</td></tr>
+      <tr><td>DJ filter</td><td>A two-pole TPT state-variable filter per channel, Q rising from 0.5 at the notch to 1.5 at full travel, and a true bypass at the notch: at exactly zero the block is skipped and the filter state cleared, so re-engaging starts from silence.</td></tr>
       <tr><td>HostLink</td><td>Product "Smack", both pages, ten jacks, three buttons, a manual and the SD filesystem, over the front USB-C. Verified on the bench: the module identifies itself, serves its descriptor, and its slot table and live state read back correctly.</td></tr>
       <tr><td>Budget</td><td>~357 KB image. SRAM 74%, DTCM 61%, SDRAM 50%. CPU: 3.3% peak measured at idle pass-through; a loop with effects is not yet measured.</td></tr>
     </tbody>

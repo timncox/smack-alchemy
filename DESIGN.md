@@ -17,7 +17,10 @@ smack-versio's DESIGN.md; keep that discipline.
   24 ppqn MIDI clock, three tiers (external / inferred / free-run), AUTO
   detection. ✅ 7 native tests.
 - **The DJ filter** (`dj_filter.h`): one sweep, LP left, HP right, real
-  bypass at the notch. ✅ measured natively. The filter is always in the
+  bypass at the notch. ✅ measured natively. Resonant since 2026-10-02 (a
+  TPT state-variable filter, Q rising from 0.5 at the notch to 1.5 at full
+  travel, ~+3.5 dB at the corner) -- so it no longer matches smack-versio's
+  copy. The filter is always in the
   chain here (Versio only ran it in its DJ role), and even "open" its
   biquads take ~0.5 dB off 8 kHz, so the callback skips the block entirely
   at exactly 0 and resets the integrators on the way out.
