@@ -12,11 +12,11 @@ the plate, holes, mounting slots and the USB-C slot; F.Mask arcs for the LED
 ring radius; F.Cu text for label offsets and the IN / OUT legends).
 
 Everything is in millimetres, front view, origin at the plate's top-left
-corner, y down. The template says nothing about which of the six middle
-jacks is J3..J8; they are numbered in reading order here (top row J3 J4 J5,
-bottom row J6 J7 J8) and the site says so. J1/J2 sit under the "IN" legend
-on the left, J9/J10 under "OUT" on the right, which the SDK's codec mapping
-agrees with.
+corner, y down. The template does not number the jacks; the printed panel
+does, DOWN each column from the left (top row J1 J3 J5 J7 J9, bottom row
+J2 J4 J6 J8 J10 -- Tim, from the panel, 2026-11-10). J1/J2 sit under the
+"IN" legend on the left, J9/J10 under "OUT" on the right, which the SDK's
+codec mapping agrees with.
 """
 import json, math, re, sys, os
 
@@ -154,14 +154,15 @@ def main():
     rails = sorted({round(pts(it)["start"][1] - oy, 2) for it in cu
                     if it.startswith("(gr_line") and abs(pts(it)["start"][0] - pts(it)["end"][0]) > 50})
 
-    # Jack numbering: two rows of five. Left column IN (J1 top, J2 bottom),
-    # right column OUT (J9 top, J10 bottom), middle six in reading order.
+    # Jack numbering: two rows of five, numbered down each column from the
+    # left, as the panel prints them. Left column IN (J1 top, J2 bottom),
+    # right column OUT (J9 top, J10 bottom).
     rows = sorted({round(j[1]) for j in jacks})
     assert len(rows) == 2
     top = sorted([j for j in jacks if round(j[1]) == rows[0]])
     bot = sorted([j for j in jacks if round(j[1]) == rows[1]])
-    jack_ids = {"J1": top[0], "J2": bot[0], "J3": top[1], "J4": top[2], "J5": top[3],
-                "J6": bot[1], "J7": bot[2], "J8": bot[3], "J9": top[4], "J10": bot[4]}
+    jack_ids = {"J1": top[0], "J2": bot[0], "J3": top[1], "J4": bot[1], "J5": top[2],
+                "J6": bot[2], "J7": top[3], "J8": bot[3], "J9": top[4], "J10": bot[4]}
 
     geom = {
         "source": "lib/alchemy-sdk/panel/front-panel-template.kicad_pcb",
@@ -175,7 +176,7 @@ def main():
                     for i, b in enumerate(buttons)],
         "usb": usb[0],
         "jacks": [{"id": k, "x": v[0], "y": v[1], "hole": 3.2} for k, v in jack_ids.items()],
-        "jack_order_assumed": "J3..J8 in reading order; the printed panel is the authority",
+        "jack_order": "down each column from the left, as printed on the panel",
         "labels": {"knob_dy": knob_dy, "button_dy": btn_dy,
                    "in": legends["IN"], "out": legends["OUT"]},
     }
